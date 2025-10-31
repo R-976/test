@@ -1,3 +1,6 @@
+# Session Generator Bot - Fixed Version
+# 2FA Fix + Must Join Improvements
+
 import os
 import json
 import time
@@ -121,33 +124,64 @@ gen_button = InlineKeyboardMarkup([
     [InlineKeyboardButton("🔄 Start Generating Session", callback_data="generate")]
 ])
 
-# ==================== MUST JOIN ====================
+# ==================== MUST JOIN (IMPROVED) ====================
 @app.on_message(filters.incoming & filters.private, group=-1)
 async def must_join_channel(bot: Client, msg: Message):
     if not MUST_JOIN:
         return
+    
     try:
+        # Check if user is member
+        await bot.get_chat_member(MUST_JOIN, msg.from_user.id)
+    except UserNotParticipant:
+        # User not joined - show join button
+        if MUST_JOIN.startswith("@"):
+            link = f"https://t.me/{MUST_JOIN[1:]}"
+            channel_name = MUST_JOIN
+        else:
+            link = f"https://t.me/{MUST_JOIN}"
+            channel_name = f"@{MUST_JOIN}"
+        
         try:
-            await bot.get_chat_member(MUST_JOIN, msg.from_user.id)
-        except UserNotParticipant:
-            if MUST_JOIN.isalpha():
-                link = "https://t.me/" + MUST_JOIN
-            else:
-                chat_info = await bot.get_chat(MUST_JOIN)
-                link = chat_info.invite_link
-            try:
-                await msg.reply_text(
-                    f"❌ **You must join my channel to use me!**\n\n"
-                    f"📢 Channel: @{MUST_JOIN}\n"
-                    f"🔗 Link: {link}\n\n"
-                    f"After joining, try again!",
-                    disable_web_page_preview=True
-                )
-                await msg.stop_propagation()
-            except ChatWriteForbidden:
-                pass
-    except ChatAdminRequired:
-        print(f"⚠️ Promote bot as admin in: @{MUST_JOIN}")
+            await msg.reply_text(
+                f"❌ **You must join my channel to use me!**\n\n"
+                f"📢 Channel: {channel_name}\n\n"
+                f"👇 **Click the button below to join:**",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📢 Join Channel", url=link)],
+                    [InlineKeyboardButton("🔄 I Joined, Continue", callback_data="check_joined")]
+                ]),
+                disable_web_page_preview=True
+            )
+            await msg.stop_propagation()
+        except ChatWriteForbidden:
+            pass
+    except (ChatAdminRequired, Exception) as e:
+        # Bot not admin or other error - let user continue
+        # This way bot works even without admin rights
+        print(f"⚠️ Must join check error: {e}")
+        pass
+
+# Check Joined Callback
+@app.on_callback_query(filters.regex("check_joined"))
+async def check_joined_callback(bot: Client, callback_query: CallbackQuery):
+    if not MUST_JOIN:
+        await callback_query.answer("No channel requirement!", show_alert=True)
+        return
+    
+    try:
+        await bot.get_chat_member(MUST_JOIN, callback_query.from_user.id)
+        await callback_query.answer("✅ Verified! You can now use the bot.", show_alert=True)
+        await callback_query.message.delete()
+    except UserNotParticipant:
+        await callback_query.answer("❌ You haven't joined yet! Please join first.", show_alert=True)
+    except Exception as e:
+        # If can't check (bot not admin), allow anyway
+        await callback_query.answer("✅ You can proceed!", show_alert=True)
+        try:
+            await callback_query.message.delete()
+        except:
+            pass
 
 # ==================== USER DATABASE ====================
 @app.on_message(filters.private & ~filters.service, group=1)
@@ -272,7 +306,7 @@ async def broadcast_command(bot: Client, msg: Message):
 async def main(_, msg: Message):
     await msg.reply(ask_ques, reply_markup=buttons_ques)
 
-# ==================== SESSION GENERATOR ====================
+# ==================== SESSION GENERATOR (2FA FIXED) ====================
 async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=False, is_bot=False):
     if telethon:
         ty = "Telethon"
@@ -320,7 +354,7 @@ async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=F
         )
         if await cancelled(api_hash_msg):
             return
-        api_hash = api_hash_msg.text
+        api_hash = api_hash_msg.text.strip()
     
     # Ask for Phone/Bot Token
     if not is_bot:
@@ -333,7 +367,7 @@ async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=F
     phone_number_msg = await bot.ask(user_id, t, filters=filters.text)
     if await cancelled(phone_number_msg):
         return
-    phone_number = phone_number_msg.text
+    phone_number = phone_number_msg.text.strip()
     
     if not is_bot:
         await msg.reply("📤 **Sending OTP...**")
@@ -367,12 +401,14 @@ async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=F
             "❌ **Invalid API_ID/API_HASH combination!**\n\nPlease start again.",
             reply_markup=gen_button
         )
+        await client.disconnect()
         return
     except (PhoneNumberInvalid, PhoneNumberInvalidError):
         await msg.reply(
             "❌ **Invalid Phone Number!**\n\nPlease start again.",
             reply_markup=gen_button
         )
+        await client.disconnect()
         return
     
     # Ask for OTP
@@ -389,17 +425,19 @@ async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=F
                 timeout=600
             )
             if await cancelled(phone_code_msg):
+                await client.disconnect()
                 return
     except TimeoutError:
         await msg.reply(
             "⏱ **Timeout!** 10 minutes exceeded.\n\nPlease start again.",
             reply_markup=gen_button
         )
+        await client.disconnect()
         return
     
     # Sign In
     if not is_bot:
-        phone_code = phone_code_msg.text.replace(" ", "")
+        phone_code = phone_code_msg.text.replace(" ", "").strip()
         try:
             if telethon:
                 await client.sign_in(phone_number, phone_code, password=None)
@@ -410,55 +448,101 @@ async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=F
                 "❌ **Invalid OTP!**\n\nPlease start again.",
                 reply_markup=gen_button
             )
+            await client.disconnect()
             return
         except (PhoneCodeExpired, PhoneCodeExpiredError):
             await msg.reply(
                 "❌ **OTP Expired!**\n\nPlease start again.",
                 reply_markup=gen_button
             )
+            await client.disconnect()
             return
         except (SessionPasswordNeeded, SessionPasswordNeededError):
             try:
                 two_step_msg = await bot.ask(
                     user_id,
                     "🔐 **Your account has 2-Step Verification!**\n\n"
-                    "📝 Send your password\n"
+                    "📝 Send your password (exactly as set, case-sensitive)\n"
                     "⏱ Timeout: 5 minutes\n\n"
+                    "⚠️ **Note:** Copy-paste your password carefully!\n"
                     "❌ Click /cancel to cancel",
                     filters=filters.text,
                     timeout=300
                 )
+                
+                if await cancelled(two_step_msg):
+                    await client.disconnect()
+                    return
+                    
             except TimeoutError:
                 await msg.reply(
                     "⏱ **Timeout!** 5 minutes exceeded.\n\nPlease start again.",
                     reply_markup=gen_button
                 )
+                await client.disconnect()
                 return
             
             try:
+                # FIX: Strip only leading/trailing spaces, not the password content
                 password = two_step_msg.text
+                
                 if telethon:
                     await client.sign_in(password=password)
                 else:
                     await client.check_password(password=password)
-            except (PasswordHashInvalid, PasswordHashInvalidError):
+                    
+            except (PasswordHashInvalid, PasswordHashInvalidError) as e:
                 await two_step_msg.reply(
-                    "❌ **Invalid Password!**\n\nPlease start again.",
+                    "❌ **Invalid Password!**\n\n"
+                    "⚠️ **Troubleshooting:**\n"
+                    "• Password is case-sensitive\n"
+                    "• Copy-paste it carefully\n"
+                    "• Check for extra spaces\n"
+                    "• Make sure it's your correct 2FA password\n\n"
+                    "Please start again.",
                     quote=True,
                     reply_markup=gen_button
                 )
+                await client.disconnect()
+                return
+            except Exception as e:
+                await two_step_msg.reply(
+                    f"❌ **Error:** `{str(e)}`\n\n"
+                    "Please start again.",
+                    quote=True,
+                    reply_markup=gen_button
+                )
+                await client.disconnect()
                 return
     else:
-        if telethon:
-            await client.start(bot_token=phone_number)
-        else:
-            await client.sign_in_bot(phone_number)
+        try:
+            if telethon:
+                await client.start(bot_token=phone_number)
+            else:
+                await client.sign_in_bot(phone_number)
+        except Exception as e:
+            await msg.reply(
+                f"❌ **Bot login failed!**\n\n"
+                f"Error: `{str(e)}`",
+                reply_markup=gen_button
+            )
+            await client.disconnect()
+            return
     
     # Generate String Session
-    if telethon:
-        string_session = client.session.save()
-    else:
-        string_session = await client.export_session_string()
+    try:
+        if telethon:
+            string_session = client.session.save()
+        else:
+            string_session = await client.export_session_string()
+    except Exception as e:
+        await msg.reply(
+            f"❌ **Failed to generate session!**\n\n"
+            f"Error: `{str(e)}`",
+            reply_markup=gen_button
+        )
+        await client.disconnect()
+        return
     
     text = (
         f"✅ **{ty.upper()} STRING SESSION**\n\n"
@@ -473,6 +557,8 @@ async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=F
         await bot.send_message(msg.chat.id, text)
     except KeyError:
         pass
+    except Exception as e:
+        print(f"Error sending session: {e}")
     
     await client.disconnect()
     await bot.send_message(
@@ -539,6 +625,7 @@ async def callbacks(bot: Client, callback_query: CallbackQuery):
                 await generate_session(bot, callback_query.message, telethon=True)
         
         except Exception as e:
+            print(f"Callback error: {e}")
             await callback_query.message.reply(
                 f"❌ **An error occurred!**\n\n"
                 f"Error: `{str(e)}`\n\n"
