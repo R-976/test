@@ -78,6 +78,7 @@ async def add_served_user(user_id: int):
     save_db(db)
 
 async def is_verified_user(user_id: int) -> bool:
+    """Only used when bot is NOT admin"""
     db = load_db()
     if "verified_users" not in db:
         db["verified_users"] = []
@@ -85,6 +86,7 @@ async def is_verified_user(user_id: int) -> bool:
     return user_id in db["verified_users"]
 
 async def verify_user(user_id: int):
+    """Only for non-admin mode"""
     db = load_db()
     if "verified_users" not in db:
         db["verified_users"] = []
@@ -93,11 +95,13 @@ async def verify_user(user_id: int):
         save_db(db)
 
 async def check_bot_admin_status(bot: Client) -> bool:
+    """Check if bot is admin in must join channel"""
     if not MUST_JOIN:
         return False
     
     db = load_db()
     
+    # Return cached value if exists
     if db.get("bot_is_admin") is not None:
         return db["bot_is_admin"]
     
@@ -105,25 +109,141 @@ async def check_bot_admin_status(bot: Client) -> bool:
         chat_member = await bot.get_chat_member(MUST_JOIN, "me")
         is_admin = chat_member.status in ["administrator", "creator"]
         
+        # Cache the result
         db["bot_is_admin"] = is_admin
         save_db(db)
         
         if is_admin:
-            print(f"✅ Bot is ADMIN in @{MUST_JOIN} - Using FORCED membership check (leave prevention)")
+            print(f"✅ Bot is ADMIN in @{MUST_JOIN}")
+            print(f"🔒 FORCE MODE: Real-time checks enabled")
+            print(f"⚠️ Verified list will be IGNORED")
         else:
-            print(f"⚠️ Bot is NOT admin in @{MUST_JOIN} - Using manual verification")
+            print(f"⚠️ Bot is NOT admin in @{MUST_JOIN}")
+            print(f"🔓 MANUAL MODE: Using verified list")
         
         return is_admin
     except Exception as e:
-        print(f"⚠️ Error checking bot admin status: {e}")
+        print(f"❌ Error checking bot admin status: {e}")
         db["bot_is_admin"] = False
         save_db(db)
         return False
 
 async def reset_admin_cache():
+    """Reset admin status cache"""
     db = load_db()
     db["bot_is_admin"] = None
     save_db(db)
+
+# ==================== CORE MUST JOIN CHECK ====================
+async def check_user_membership(bot: Client, user_id: int) -> dict:
+    """
+    Universal membership check function
+    Returns: {
+        "allowed": bool,
+        "is_admin_mode": bool,
+        "message": str
+    }
+    """
+    if not MUST_JOIN:
+        return {"allowed": True, "is_admin_mode": False, "message": ""}
+    
+    # Owner is always allowed
+    if user_id == OWNER_ID:
+        return {"allowed": True, "is_admin_mode": False, "message": ""}
+    
+    # Check if bot is admin
+    bot_is_admin = await check_bot_admin_status(bot)
+    
+    # ========== ADMIN MODE: FORCE CHECK (IGNORE VERIFIED LIST) ==========
+    if bot_is_admin:
+        try:
+            member = await bot.get_chat_member(MUST_JOIN, user_id)
+            
+            # Check valid member status
+            if member.status in ["member", "administrator", "creator"]:
+                print(f"✅ ALLOWED: User {user_id} is member (Admin mode)")
+                return {"allowed": True, "is_admin_mode": True, "message": ""}
+            else:
+                print(f"🚫 BLOCKED: User {user_id} - Status: {member.status} (Admin mode)")
+                return {"allowed": False, "is_admin_mode": True, "message": "force_join"}
+                
+        except UserNotParticipant:
+            print(f"🚫 BLOCKED: User {user_id} - Not in channel (Admin mode)")
+            return {"allowed": False, "is_admin_mode": True, "message": "force_join"}
+            
+        except ChatAdminRequired:
+            print(f"⚠️ Bot lost admin rights! Switching to manual mode")
+            await reset_admin_cache()
+            return {"allowed": False, "is_admin_mode": False, "message": "manual_verify"}
+            
+        except Exception as e:
+            print(f"❌ Membership check error for {user_id}: {e}")
+            # In admin mode, block on error for security
+            return {"allowed": False, "is_admin_mode": True, "message": "force_join"}
+    
+    # ========== NON-ADMIN MODE: VERIFIED LIST CHECK ==========
+    else:
+        if await is_verified_user(user_id):
+            print(f"✅ ALLOWED: User {user_id} is verified (Non-admin mode)")
+            return {"allowed": True, "is_admin_mode": False, "message": ""}
+        else:
+            print(f"⚠️ NOT VERIFIED: User {user_id} (Non-admin mode)")
+            return {"allowed": False, "is_admin_mode": False, "message": "manual_verify"}
+
+async def send_must_join_message(bot: Client, chat_id: int, is_admin_mode: bool):
+    """Send must join message based on mode"""
+    if MUST_JOIN.startswith("@"):
+        link = f"https://t.me/{MUST_JOIN[1:]}"
+        channel_name = MUST_JOIN
+    else:
+        link = f"https://t.me/{MUST_JOIN}"
+        channel_name = f"@{MUST_JOIN}"
+    
+    if is_admin_mode:
+        # FORCE MODE - No verified list, must stay joined
+        message_text = (
+            f"🚫 **ACCESS DENIED!**\n\n"
+            f"❌ You are NOT in our channel!\n\n"
+            f"📢 **Channel:** {channel_name}\n\n"
+            f"⚠️ **IMPORTANT:**\n"
+            f"• You MUST join the channel\n"
+            f"• You CANNOT leave after joining\n"
+            f"• If you leave, you'll be blocked again\n\n"
+            f"👇 **Steps:**\n"
+            f"1️⃣ Click 'Join Channel' button\n"
+            f"2️⃣ Join the channel\n"
+            f"3️⃣ Click 'Check Again' button\n"
+            f"4️⃣ Stay in channel to keep using bot"
+        )
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📢 Join Channel", url=link)],
+            [InlineKeyboardButton("🔄 Check Again", callback_data="check_again")]
+        ])
+    else:
+        # MANUAL MODE - Verified list used
+        message_text = (
+            f"❌ **You must join my channel to use me!**\n\n"
+            f"📢 **Channel:** {channel_name}\n\n"
+            f"👇 **Steps:**\n"
+            f"1️⃣ Click 'Join Channel' button\n"
+            f"2️⃣ Join the channel\n"
+            f"3️⃣ Click 'I Joined' button\n\n"
+            f"✅ After verification, you can use the bot freely!"
+        )
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📢 Join Channel", url=link)],
+            [InlineKeyboardButton("✅ I Joined", callback_data="manual_verify")]
+        ])
+    
+    try:
+        await bot.send_message(
+            chat_id,
+            message_text,
+            reply_markup=keyboard,
+            disable_web_page_preview=True
+        )
+    except Exception as e:
+        print(f"Error sending must join message: {e}")
 
 # ==================== FLASK KEEP-ALIVE ====================
 logging.getLogger("werkzeug").setLevel(logging.ERROR)
@@ -169,120 +289,19 @@ gen_button = InlineKeyboardMarkup([
     [InlineKeyboardButton("🔄 Start Generating Session", callback_data="generate")]
 ])
 
-# ==================== FORCED MUST JOIN (FIXED) ====================
-@app.on_message(filters.incoming & filters.private, group=-1)
-async def must_join_channel(bot: Client, msg: Message):
-    if not MUST_JOIN:
-        return
-    
-    # Check if bot is admin
-    bot_is_admin = await check_bot_admin_status(bot)
-    
-    # ========== ADMIN MODE: FORCED CHECK (NO VERIFIED LIST) ==========
-    if bot_is_admin:
-        try:
-            # Real-time membership check - HAR MESSAGE PE
-            member = await bot.get_chat_member(MUST_JOIN, msg.from_user.id)
-            
-            # Check if user is actually a member (not kicked/left)
-            if member.status in ["member", "administrator", "creator"]:
-                # User is member - allow
-                return
-            else:
-                # User is kicked/banned/left - block
-                print(f"⚠️ User {msg.from_user.id} status: {member.status}")
-                pass  # Will show join message below
-                
-        except UserNotParticipant:
-            # User never joined or left - block
-            print(f"🚫 User {msg.from_user.id} not in channel - blocking")
-            pass  # Will show join message below
-            
-        except ChatAdminRequired:
-            # Bot lost admin rights - switch to manual mode
-            print("⚠️ Bot lost admin rights! Switching to manual verification mode")
-            await reset_admin_cache()
-            bot_is_admin = False  # Switch to manual mode
-            
-        except Exception as e:
-            # Unknown error - for security, block user
-            print(f"❌ Membership check error for user {msg.from_user.id}: {e}")
-            # DON'T return here - show join message instead
-            pass
-        
-        # If we reach here in admin mode, user is NOT a member
-        # Show join message (defined below)
-    
-    # ========== NON-ADMIN MODE: MANUAL VERIFICATION ==========
-    else:
-        # Check verified users list only when bot is NOT admin
-        if await is_verified_user(msg.from_user.id):
-            return
-    
-    # ========== SHOW JOIN MESSAGE ==========
-    if MUST_JOIN.startswith("@"):
-        link = f"https://t.me/{MUST_JOIN[1:]}"
-        channel_name = MUST_JOIN
-    else:
-        link = f"https://t.me/{MUST_JOIN}"
-        channel_name = f"@{MUST_JOIN}"
-    
-    if bot_is_admin:
-        # Admin mode - no "I Joined" button, direct join only
-        message_text = (
-            f"🚫 **ACCESS DENIED!**\n\n"
-            f"You must join and **STAY** in our channel to use this bot.\n\n"
-            f"📢 **Channel:** {channel_name}\n\n"
-            f"👇 **Steps:**\n"
-            f"1️⃣ Click the button below\n"
-            f"2️⃣ Join the channel\n"
-            f"3️⃣ Try using the bot again\n\n"
-            f"⚠️ **Important:** You CANNOT leave the channel!\n"
-            f"If you leave, you will be blocked from using this bot."
-        )
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📢 Join Channel Now", url=link)],
-            [InlineKeyboardButton("🔄 I Joined, Retry", callback_data="retry_after_join")]
-        ])
-    else:
-        # Non-admin mode - show "I Joined" button
-        message_text = (
-            f"❌ **You must join my channel to use me!**\n\n"
-            f"📢 **Channel:** {channel_name}\n\n"
-            f"👇 **Please follow these steps:**\n"
-            f"1️⃣ Click '📢 Join Channel' button\n"
-            f"2️⃣ Join the channel\n"
-            f"3️⃣ Click '✅ I Joined' button\n"
-            f"4️⃣ Continue using the bot"
-        )
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📢 Join Channel", url=link)],
-            [InlineKeyboardButton("✅ I Joined, Continue", callback_data="check_joined")]
-        ])
-    
-    try:
-        await msg.reply_text(
-            message_text,
-            reply_markup=keyboard,
-            disable_web_page_preview=True
-        )
-        await msg.stop_propagation()
-    except ChatWriteForbidden:
-        pass
-
-# Retry After Join (Admin Mode)
-@app.on_callback_query(filters.regex("retry_after_join"))
-async def retry_after_join_callback(bot: Client, callback_query: CallbackQuery):
-    if not MUST_JOIN:
-        await callback_query.answer("No channel requirement!", show_alert=True)
-        return
-    
+# ==================== CALLBACK HANDLERS ====================
+@app.on_callback_query()
+async def handle_all_callbacks(bot: Client, callback_query: CallbackQuery):
+    """Universal callback handler with membership check"""
     user_id = callback_query.from_user.id
+    callback_data = callback_query.data
     
-    try:
-        member = await bot.get_chat_member(MUST_JOIN, user_id)
+    # Handle verification callbacks
+    if callback_data == "check_again":
+        # Admin mode - recheck membership
+        result = await check_user_membership(bot, user_id)
         
-        if member.status in ["member", "administrator", "creator"]:
+        if result["allowed"]:
             await callback_query.answer("✅ Verified! You can now use the bot.", show_alert=True)
             try:
                 await callback_query.message.delete()
@@ -290,64 +309,94 @@ async def retry_after_join_callback(bot: Client, callback_query: CallbackQuery):
                 pass
         else:
             await callback_query.answer(
-                f"❌ Your status: {member.status}\n\nPlease join the channel first!",
+                "❌ You are still not in the channel!\n\nPlease join first.",
                 show_alert=True
             )
-    except UserNotParticipant:
-        await callback_query.answer(
-            "❌ You haven't joined the channel yet!\n\nPlease join first and then click this button.",
-            show_alert=True
-        )
-    except Exception as e:
-        print(f"Retry verification error: {e}")
-        await callback_query.answer("❌ Error checking membership. Please try /start again.", show_alert=True)
-
-# Manual Verification (Non-Admin Mode)
-@app.on_callback_query(filters.regex("check_joined"))
-async def check_joined_callback(bot: Client, callback_query: CallbackQuery):
-    if not MUST_JOIN:
-        await callback_query.answer("No channel requirement!", show_alert=True)
         return
     
-    user_id = callback_query.from_user.id
-    bot_is_admin = await check_bot_admin_status(bot)
-    
-    if bot_is_admin:
-        # If bot is admin, do real verification
-        try:
-            member = await bot.get_chat_member(MUST_JOIN, user_id)
+    elif callback_data == "manual_verify":
+        # Non-admin mode - trust user
+        bot_is_admin = await check_bot_admin_status(bot)
+        
+        if bot_is_admin:
+            # Bot became admin - do real check
+            result = await check_user_membership(bot, user_id)
             
-            if member.status in ["member", "administrator", "creator"]:
+            if result["allowed"]:
                 await callback_query.answer("✅ Verified! You can now use the bot.", show_alert=True)
                 try:
                     await callback_query.message.delete()
                 except:
                     pass
             else:
-                await callback_query.answer(
-                    "❌ Please join the channel first!",
-                    show_alert=True
-                )
-        except UserNotParticipant:
+                await callback_query.answer("❌ Please join the channel first!", show_alert=True)
+        else:
+            # Manual mode - verify user
+            await verify_user(user_id)
             await callback_query.answer(
-                "❌ You haven't joined the channel yet!\n\nPlease join first.",
+                "✅ Thank you! You can now use the bot.",
                 show_alert=True
             )
-        except Exception as e:
-            print(f"Verification error: {e}")
-            await callback_query.answer("❌ Error verifying. Please try again.", show_alert=True)
-    else:
-        # Non-admin mode - trust user
-        await verify_user(user_id)
+            try:
+                await callback_query.message.delete()
+            except:
+                pass
+        return
+    
+    # For all other callbacks, check membership first
+    result = await check_user_membership(bot, user_id)
+    
+    if not result["allowed"]:
         await callback_query.answer(
-            "✅ Thank you! You can now use the bot.\n\n"
-            "⚠️ Please make sure you actually joined the channel!",
+            "❌ Please join the channel first!",
             show_alert=True
         )
+        await send_must_join_message(bot, callback_query.message.chat.id, result["is_admin_mode"])
+        return
+    
+    # User is allowed - process callback
+    await process_callback(bot, callback_query)
+
+async def process_callback(bot: Client, callback_query: CallbackQuery):
+    """Process actual callbacks after membership check"""
+    query = callback_query.data
+    
+    if query == "generate":
+        await callback_query.answer()
+        await callback_query.message.reply(ask_ques, reply_markup=buttons_ques)
+    
+    elif query.startswith("pyrogram") or query.startswith("telethon"):
         try:
-            await callback_query.message.delete()
-        except:
-            pass
+            if query == "pyrogram":
+                await callback_query.answer(
+                    "⚠️ Pyrogram V2 sessions only work with updated bots!",
+                    show_alert=True
+                )
+                await generate_session(bot, callback_query.message)
+            
+            elif query == "pyrogram1":
+                await callback_query.answer("📱 Pyrogram Old Version", show_alert=True)
+                await generate_session(bot, callback_query.message, old_pyro=True)
+            
+            elif query == "pyrogram_bot":
+                await callback_query.answer("🤖 Pyrogram V2 Bot Session", show_alert=True)
+                await generate_session(bot, callback_query.message, is_bot=True)
+            
+            elif query == "telethon_bot":
+                await callback_query.answer("🤖 Telethon Bot Session", show_alert=True)
+                await generate_session(bot, callback_query.message, telethon=True, is_bot=True)
+            
+            elif query == "telethon":
+                await callback_query.answer("📱 Telethon User Session", show_alert=True)
+                await generate_session(bot, callback_query.message, telethon=True)
+        
+        except Exception as e:
+            print(f"Callback error: {e}")
+            await callback_query.message.reply(
+                f"❌ **An error occurred!**\n\n"
+                f"Error: `{str(e)}`\n\n"
+                f"Contact @RomeoBot_OP for help!"
+            )
 
 # ==================== USER DATABASE ====================
 @app.on_message(filters.private & ~filters.service, group=1)
@@ -357,6 +406,14 @@ async def users_sql(_, msg: Message):
 # ==================== START COMMAND ====================
 @app.on_message(filters.private & filters.command("start"))
 async def start(bot: Client, msg: Message):
+    # MUST JOIN CHECK
+    result = await check_user_membership(bot, msg.from_user.id)
+    
+    if not result["allowed"]:
+        await send_must_join_message(bot, msg.chat.id, result["is_admin_mode"])
+        return
+    
+    # User is allowed - show start message
     me = await bot.get_me()
     await msg.reply_text(
         f"👋 **Hey {msg.from_user.mention}!**\n\n"
@@ -373,6 +430,18 @@ async def start(bot: Client, msg: Message):
         ])
     )
 
+# ==================== GENERATE COMMAND ====================
+@app.on_message(filters.private & filters.command(["generate", "gen", "string", "str"]))
+async def generate_command(bot: Client, msg: Message):
+    # MUST JOIN CHECK
+    result = await check_user_membership(bot, msg.from_user.id)
+    
+    if not result["allowed"]:
+        await send_must_join_message(bot, msg.chat.id, result["is_admin_mode"])
+        return
+    
+    await msg.reply(ask_ques, reply_markup=buttons_ques)
+
 # ==================== STATS COMMAND ====================
 @app.on_message(filters.user(OWNER_ID) & filters.command("stats"))
 async def stats(bot: Client, msg: Message):
@@ -382,19 +451,28 @@ async def stats(bot: Client, msg: Message):
     bot_is_admin = await check_bot_admin_status(bot)
     
     if bot_is_admin:
-        mode = "✅ **FORCED MODE** (Admin)\n🔒 Real-time check - Users CANNOT leave"
+        mode = (
+            "✅ **FORCE MODE** (Bot is Admin)\n"
+            "🔒 Real-time membership check\n"
+            "🚫 Users CANNOT leave channel\n"
+            "⚠️ Verified list is IGNORED"
+        )
     else:
-        mode = "⚠️ **MANUAL MODE** (Not Admin)\n🔓 One-time verification"
+        mode = (
+            "⚠️ **MANUAL MODE** (Bot NOT Admin)\n"
+            "🔓 One-time verification\n"
+            "✅ Using verified list\n"
+            f"📋 {verified} users verified"
+        )
     
     await msg.reply_text(
         f"📊 **Bot Statistics:**\n\n"
-        f"👥 Total Users: **{len(users)}**\n"
-        f"✅ Verified Users: **{verified}**\n\n"
+        f"👥 Total Users: **{len(users)}**\n\n"
         f"🔐 **Must Join Status:**\n{mode}",
         quote=True
     )
 
-# ==================== REFRESH ADMIN STATUS ====================
+# ==================== REFRESH COMMAND ====================
 @app.on_message(filters.user(OWNER_ID) & filters.command("refresh"))
 async def refresh_admin_status(bot: Client, msg: Message):
     await reset_admin_cache()
@@ -403,23 +481,22 @@ async def refresh_admin_status(bot: Client, msg: Message):
     if bot_is_admin:
         status = (
             "✅ Bot is **ADMIN** in the channel\n\n"
-            "🔒 **Mode:** FORCED JOIN (Real-time check)\n"
-            "📌 Users must STAY in channel\n"
-            "🚫 Leave = Auto Block\n"
-            "✨ Verified list is IGNORED in this mode"
+            "🔒 **FORCE MODE ACTIVE**\n"
+            "• Real-time membership check\n"
+            "• Users must STAY in channel\n"
+            "• Verified list IGNORED\n"
+            "• Leave = Auto Block"
         )
     else:
         status = (
             "⚠️ Bot is **NOT ADMIN** in the channel\n\n"
-            "🔓 **Mode:** Manual verification\n"
-            "📌 One-time join button\n"
-            "✅ Uses verified_users list"
+            "🔓 **MANUAL MODE ACTIVE**\n"
+            "• One-time verification\n"
+            "• Using verified list\n"
+            "• Users can leave after verify"
         )
     
-    await msg.reply_text(
-        f"🔄 **Admin Status Refreshed!**\n\n{status}",
-        quote=True
-    )
+    await msg.reply_text(f"🔄 **Admin Status Refreshed!**\n\n{status}", quote=True)
 
 # ==================== BROADCAST COMMAND ====================
 @app.on_message(filters.user(OWNER_ID) & filters.command("broadcast"))
@@ -503,13 +580,15 @@ async def broadcast_command(bot: Client, msg: Message):
         f"**Success Rate:** `{round((success/total_users)*100, 2)}%`"
     )
 
-# ==================== GENERATE COMMAND ====================
-@app.on_message(filters.private & filters.command(["generate", "gen", "string", "str"]))
-async def main(_, msg: Message):
-    await msg.reply(ask_ques, reply_markup=buttons_ques)
-
 # ==================== SESSION GENERATOR ====================
 async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=False, is_bot=False):
+    # MUST JOIN CHECK before starting
+    result = await check_user_membership(bot, msg.from_user.id)
+    
+    if not result["allowed"]:
+        await send_must_join_message(bot, msg.chat.id, result["is_admin_mode"])
+        return
+    
     if telethon:
         ty = "Telethon"
     else:
@@ -522,7 +601,6 @@ async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=F
     await msg.reply(f"🚀 **Starting {ty} Session Generation...**")
     user_id = msg.chat.id
     
-    # Ask for API_ID
     api_id_msg = await bot.ask(
         user_id, 
         "📝 **Send your API_ID**\n\n"
@@ -548,7 +626,6 @@ async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=F
             )
             return
         
-        # Ask for API_HASH
         api_hash_msg = await bot.ask(
             user_id,
             "📝 **Now send your API_HASH**\n\n❌ Click /cancel to cancel",
@@ -558,7 +635,6 @@ async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=F
             return
         api_hash = api_hash_msg.text.strip()
     
-    # Ask for Phone/Bot Token
     if not is_bot:
         t = "📱 **Send your PHONE NUMBER** with country code\n\n" \
             "Example: `+919876543210`\n\n❌ Click /cancel to cancel"
@@ -576,7 +652,6 @@ async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=F
     else:
         await msg.reply("🔐 **Logging as Bot...**")
     
-    # Create Client
     if telethon and is_bot:
         client = TelegramClient(StringSession(), api_id, api_hash)
     elif telethon:
@@ -590,7 +665,6 @@ async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=F
     
     await client.connect()
     
-    # Send Code
     try:
         code = None
         if not is_bot:
@@ -613,7 +687,6 @@ async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=F
         await client.disconnect()
         return
     
-    # Ask for OTP
     try:
         phone_code_msg = None
         if not is_bot:
@@ -637,7 +710,6 @@ async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=F
         await client.disconnect()
         return
     
-    # Sign In
     if not is_bot:
         phone_code = phone_code_msg.text.replace(" ", "").strip()
         try:
@@ -730,7 +802,6 @@ async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=F
             await client.disconnect()
             return
     
-    # Generate String Session
     string_session = None
     try:
         if telethon:
@@ -772,7 +843,6 @@ async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=F
         await client.disconnect()
         return
     
-    # Send session to user
     text = (
         f"✅ **{ty.upper()} STRING SESSION**\n\n"
         f"`{string_session}`\n\n"
@@ -836,51 +906,10 @@ async def cancelled(msg):
     else:
         return False
 
-# ==================== CALLBACKS ====================
-@app.on_callback_query(filters.regex(r"^(generate|pyrogram|pyrogram1|pyrogram_bot|telethon_bot|telethon)$"))
-async def callbacks(bot: Client, callback_query: CallbackQuery):
-    query = callback_query.matches[0].group(1)
-    
-    if query == "generate":
-        await callback_query.answer()
-        await callback_query.message.reply(ask_ques, reply_markup=buttons_ques)
-    
-    elif query.startswith("pyrogram") or query.startswith("telethon"):
-        try:
-            if query == "pyrogram":
-                await callback_query.answer(
-                    "⚠️ Pyrogram V2 sessions only work with updated bots!",
-                    show_alert=True
-                )
-                await generate_session(bot, callback_query.message)
-            
-            elif query == "pyrogram1":
-                await callback_query.answer("📱 Pyrogram Old Version", show_alert=True)
-                await generate_session(bot, callback_query.message, old_pyro=True)
-            
-            elif query == "pyrogram_bot":
-                await callback_query.answer("🤖 Pyrogram V2 Bot Session", show_alert=True)
-                await generate_session(bot, callback_query.message, is_bot=True)
-            
-            elif query == "telethon_bot":
-                await callback_query.answer("🤖 Telethon Bot Session", show_alert=True)
-                await generate_session(bot, callback_query.message, telethon=True, is_bot=True)
-            
-            elif query == "telethon":
-                await callback_query.answer("📱 Telethon User Session", show_alert=True)
-                await generate_session(bot, callback_query.message, telethon=True)
-        
-        except Exception as e:
-            print(f"Callback error: {e}")
-            await callback_query.message.reply(
-                f"❌ **An error occurred!**\n\n"
-                f"Error: `{str(e)}`\n\n"
-                f"Contact @RomeoBot_OP for help!"
-            )
-
 # ==================== RUN BOT ====================
 if __name__ == "__main__":
     print("🚀 Starting Session Generator Bot...")
+    print("=" * 50)
     try:
         app.start()
     except (ApiIdInvalid, ApiIdPublishedFlood):
@@ -889,7 +918,9 @@ if __name__ == "__main__":
         raise Exception("❌ Invalid BOT_TOKEN!")
     
     me = app.get_me()
-    print(f"✅ @{me.username} started successfully!")
+    print(f"✅ Bot: @{me.username}")
+    print(f"🔐 Must Join: {MUST_JOIN if MUST_JOIN else 'Disabled'}")
+    print("=" * 50)
     idle()
     app.stop()
     print("👋 Bot stopped. Goodbye!")
