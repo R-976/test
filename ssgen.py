@@ -49,6 +49,9 @@ BOT_TOKEN = getenv("BOT_TOKEN", "8351290809:AAGNTwNVF9i39PmgI-tGp_SpEbaYBjxiveA"
 OWNER_ID = int(getenv("OWNER_ID", "5368154755"))
 MUST_JOIN = getenv("MUST_JOIN", "RomeoBot_op")
 
+# Global bot instance reference
+bot_instance = None
+
 # ==================== JSON DATABASE ====================
 DB_FILE = "users_db.json"
 
@@ -56,7 +59,7 @@ def load_db():
     if os.path.exists(DB_FILE):
         with open(DB_FILE, 'r') as f:
             return json.load(f)
-    return {"users": [], "verified_users": [], "bot_is_admin": None}
+    return {"users": [], "verified_users": [], "bot_is_admin": None, "last_check": None}
 
 def save_db(data):
     with open(DB_FILE, 'w') as f:
@@ -94,45 +97,108 @@ async def verify_user(user_id: int):
         db["verified_users"].append(user_id)
         save_db(db)
 
-async def check_bot_admin_status(bot: Client) -> bool:
-    """Check if bot is admin in must join channel"""
-    if not MUST_JOIN:
-        return False
-    
-    db = load_db()
-    
-    # Return cached value if exists
-    if db.get("bot_is_admin") is not None:
-        return db["bot_is_admin"]
-    
-    try:
-        chat_member = await bot.get_chat_member(MUST_JOIN, "me")
-        is_admin = chat_member.status in ["administrator", "creator"]
-        
-        # Cache the result
-        db["bot_is_admin"] = is_admin
-        save_db(db)
-        
-        if is_admin:
-            print(f"✅ Bot is ADMIN in @{MUST_JOIN}")
-            print(f"🔒 FORCE MODE: Real-time checks enabled")
-            print(f"⚠️ Verified list will be IGNORED")
-        else:
-            print(f"⚠️ Bot is NOT admin in @{MUST_JOIN}")
-            print(f"🔓 MANUAL MODE: Using verified list")
-        
-        return is_admin
-    except Exception as e:
-        print(f"❌ Error checking bot admin status: {e}")
-        db["bot_is_admin"] = False
-        save_db(db)
-        return False
-
 async def reset_admin_cache():
     """Reset admin status cache"""
     db = load_db()
     db["bot_is_admin"] = None
+    db["last_check"] = None
     save_db(db)
+    print("🔄 Admin cache reset")
+
+async def check_bot_admin_status(bot: Client, force_check: bool = False) -> bool:
+    """
+    Check if bot is admin in must join channel
+    Args:
+        bot: Client instance
+        force_check: If True, ignore cache and check again
+    Returns:
+        bool: True if bot is admin, False otherwise
+    """
+    if not MUST_JOIN:
+        print("⚠️ MUST_JOIN not configured")
+        return False
+    
+    db = load_db()
+    
+    # Return cached value if exists and not forced
+    if not force_check and db.get("bot_is_admin") is not None:
+        cached_status = db["bot_is_admin"]
+        print(f"📋 Using cached admin status: {cached_status}")
+        return cached_status
+    
+    print(f"🔍 Checking bot admin status in @{MUST_JOIN}...")
+    
+    try:
+        # Get bot's own user ID first
+        me = await bot.get_me()
+        bot_id = me.id
+        print(f"🤖 Bot ID: {bot_id}")
+        
+        # Try to get chat info
+        try:
+            chat = await bot.get_chat(MUST_JOIN)
+            print(f"📢 Channel: {chat.title} (ID: {chat.id})")
+        except Exception as e:
+            print(f"⚠️ Could not get chat info: {e}")
+        
+        # Check bot's membership status using bot's ID
+        try:
+            member = await bot.get_chat_member(MUST_JOIN, bot_id)
+            print(f"👤 Bot status in channel: {member.status}")
+            
+            is_admin = member.status in ["administrator", "creator"]
+            
+            # Cache the result
+            db["bot_is_admin"] = is_admin
+            db["last_check"] = time.time()
+            save_db(db)
+            
+            if is_admin:
+                print("=" * 60)
+                print("✅ BOT IS ADMIN IN THE CHANNEL")
+                print("🔒 FORCE MODE ACTIVATED")
+                print("📌 Real-time membership checks enabled")
+                print("⚠️ Verified user list will be IGNORED")
+                print("🚫 Users who leave will be auto-blocked")
+                print("=" * 60)
+            else:
+                print("=" * 60)
+                print("⚠️ BOT IS NOT ADMIN IN THE CHANNEL")
+                print(f"📊 Current Status: {member.status}")
+                print("🔓 MANUAL MODE ACTIVATED")
+                print("📋 Using verified user list")
+                print("✅ One-time verification enabled")
+                print("=" * 60)
+            
+            return is_admin
+            
+        except UserNotParticipant:
+            print("❌ Bot is NOT in the channel!")
+            print("⚠️ Please add bot to the channel first")
+            db["bot_is_admin"] = False
+            db["last_check"] = time.time()
+            save_db(db)
+            return False
+            
+        except ChatAdminRequired:
+            print("⚠️ Bot is in channel but NOT an admin")
+            print("🔓 Using manual verification mode")
+            db["bot_is_admin"] = False
+            db["last_check"] = time.time()
+            save_db(db)
+            return False
+            
+    except Exception as e:
+        print(f"❌ ERROR checking bot admin status: {e}")
+        print(f"Error type: {type(e).__name__}")
+        import traceback
+        traceback.print_exc()
+        
+        # On error, assume not admin for safety
+        db["bot_is_admin"] = False
+        db["last_check"] = time.time()
+        save_db(db)
+        return False
 
 # ==================== CORE MUST JOIN CHECK ====================
 async def check_user_membership(bot: Client, user_id: int) -> dict:
@@ -151,8 +217,8 @@ async def check_user_membership(bot: Client, user_id: int) -> dict:
     if user_id == OWNER_ID:
         return {"allowed": True, "is_admin_mode": False, "message": ""}
     
-    # Check if bot is admin
-    bot_is_admin = await check_bot_admin_status(bot)
+    # Check if bot is admin (use cache)
+    bot_is_admin = await check_bot_admin_status(bot, force_check=False)
     
     # ========== ADMIN MODE: FORCE CHECK (IGNORE VERIFIED LIST) ==========
     if bot_is_admin:
@@ -161,33 +227,34 @@ async def check_user_membership(bot: Client, user_id: int) -> dict:
             
             # Check valid member status
             if member.status in ["member", "administrator", "creator"]:
-                print(f"✅ ALLOWED: User {user_id} is member (Admin mode)")
+                print(f"✅ ADMIN MODE: User {user_id} is member - ALLOWED")
                 return {"allowed": True, "is_admin_mode": True, "message": ""}
             else:
-                print(f"🚫 BLOCKED: User {user_id} - Status: {member.status} (Admin mode)")
+                print(f"🚫 ADMIN MODE: User {user_id} status={member.status} - BLOCKED")
                 return {"allowed": False, "is_admin_mode": True, "message": "force_join"}
                 
         except UserNotParticipant:
-            print(f"🚫 BLOCKED: User {user_id} - Not in channel (Admin mode)")
+            print(f"🚫 ADMIN MODE: User {user_id} not in channel - BLOCKED")
             return {"allowed": False, "is_admin_mode": True, "message": "force_join"}
             
         except ChatAdminRequired:
-            print(f"⚠️ Bot lost admin rights! Switching to manual mode")
+            print(f"⚠️ Bot lost admin rights during check!")
             await reset_admin_cache()
-            return {"allowed": False, "is_admin_mode": False, "message": "manual_verify"}
+            # Recheck with non-admin mode
+            return await check_user_membership(bot, user_id)
             
         except Exception as e:
-            print(f"❌ Membership check error for {user_id}: {e}")
+            print(f"❌ Error checking user {user_id}: {e}")
             # In admin mode, block on error for security
             return {"allowed": False, "is_admin_mode": True, "message": "force_join"}
     
     # ========== NON-ADMIN MODE: VERIFIED LIST CHECK ==========
     else:
         if await is_verified_user(user_id):
-            print(f"✅ ALLOWED: User {user_id} is verified (Non-admin mode)")
+            print(f"✅ MANUAL MODE: User {user_id} is verified - ALLOWED")
             return {"allowed": True, "is_admin_mode": False, "message": ""}
         else:
-            print(f"⚠️ NOT VERIFIED: User {user_id} (Non-admin mode)")
+            print(f"⚠️ MANUAL MODE: User {user_id} not verified - SHOW VERIFY BUTTON")
             return {"allowed": False, "is_admin_mode": False, "message": "manual_verify"}
 
 async def send_must_join_message(bot: Client, chat_id: int, is_admin_mode: bool):
@@ -316,7 +383,7 @@ async def handle_all_callbacks(bot: Client, callback_query: CallbackQuery):
     
     elif callback_data == "manual_verify":
         # Non-admin mode - trust user
-        bot_is_admin = await check_bot_admin_status(bot)
+        bot_is_admin = await check_bot_admin_status(bot, force_check=False)
         
         if bot_is_admin:
             # Bot became admin - do real check
@@ -448,7 +515,9 @@ async def stats(bot: Client, msg: Message):
     users = await get_served_users()
     db = load_db()
     verified = len(db.get("verified_users", []))
-    bot_is_admin = await check_bot_admin_status(bot)
+    
+    # Force fresh check
+    bot_is_admin = await check_bot_admin_status(bot, force_check=True)
     
     if bot_is_admin:
         mode = (
@@ -465,18 +534,24 @@ async def stats(bot: Client, msg: Message):
             f"📋 {verified} users verified"
         )
     
+    last_check = db.get("last_check")
+    last_check_str = f"⏰ Last Check: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(last_check))}" if last_check else "⏰ Never checked"
+    
     await msg.reply_text(
         f"📊 **Bot Statistics:**\n\n"
         f"👥 Total Users: **{len(users)}**\n\n"
-        f"🔐 **Must Join Status:**\n{mode}",
+        f"🔐 **Must Join Status:**\n{mode}\n\n"
+        f"{last_check_str}",
         quote=True
     )
 
 # ==================== REFRESH COMMAND ====================
 @app.on_message(filters.user(OWNER_ID) & filters.command("refresh"))
 async def refresh_admin_status(bot: Client, msg: Message):
+    await msg.reply_text("🔄 **Checking admin status...**", quote=True)
+    
     await reset_admin_cache()
-    bot_is_admin = await check_bot_admin_status(bot)
+    bot_is_admin = await check_bot_admin_status(bot, force_check=True)
     
     if bot_is_admin:
         status = (
@@ -909,18 +984,42 @@ async def cancelled(msg):
 # ==================== RUN BOT ====================
 if __name__ == "__main__":
     print("🚀 Starting Session Generator Bot...")
-    print("=" * 50)
+    print("=" * 60)
+    
     try:
         app.start()
+        bot_instance = app
+        
+        # Get bot info
+        me = app.get_me()
+        print(f"✅ Bot Started: @{me.username}")
+        print(f"🆔 Bot ID: {me.id}")
+        print(f"📛 Bot Name: {me.first_name}")
+        print("=" * 60)
+        
+        # Check admin status on startup
+        if MUST_JOIN:
+            print(f"🔐 Must Join Channel: @{MUST_JOIN}")
+            print("🔍 Checking admin status on startup...")
+            
+            # Force check admin status
+            import asyncio
+            loop = asyncio.get_event_loop()
+            is_admin = loop.run_until_complete(check_bot_admin_status(app, force_check=True))
+            
+        else:
+            print("⚠️ MUST_JOIN not configured - All users allowed")
+        
+        print("=" * 60)
+        print("✅ Bot is ready and running!")
+        print("=" * 60)
+        
+        idle()
+        
     except (ApiIdInvalid, ApiIdPublishedFlood):
         raise Exception("❌ Invalid API_ID/API_HASH!")
     except AccessTokenInvalid:
         raise Exception("❌ Invalid BOT_TOKEN!")
-    
-    me = app.get_me()
-    print(f"✅ Bot: @{me.username}")
-    print(f"🔐 Must Join: {MUST_JOIN if MUST_JOIN else 'Disabled'}")
-    print("=" * 50)
-    idle()
-    app.stop()
-    print("👋 Bot stopped. Goodbye!")
+    finally:
+        app.stop()
+        print("👋 Bot stopped. Goodbye!")
