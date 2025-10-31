@@ -1,3 +1,6 @@
+# Session Generator Bot - SESSION STRING FIX
+# String session empty aane ka issue fix kiya
+
 import os
 import json
 import time
@@ -78,7 +81,6 @@ async def add_served_user(user_id: int):
     save_db(db)
 
 async def is_verified_user(user_id: int) -> bool:
-    """Check if user has clicked 'I Joined' button (only for non-admin mode)"""
     db = load_db()
     if "verified_users" not in db:
         db["verified_users"] = []
@@ -86,7 +88,6 @@ async def is_verified_user(user_id: int) -> bool:
     return user_id in db["verified_users"]
 
 async def verify_user(user_id: int):
-    """Mark user as verified after clicking 'I Joined' (only for non-admin mode)"""
     db = load_db()
     if "verified_users" not in db:
         db["verified_users"] = []
@@ -95,13 +96,11 @@ async def verify_user(user_id: int):
         save_db(db)
 
 async def check_bot_admin_status(bot: Client) -> bool:
-    """Check if bot is admin in MUST_JOIN channel"""
     if not MUST_JOIN:
         return False
     
     db = load_db()
     
-    # Check from cache first (to avoid repeated API calls)
     if db.get("bot_is_admin") is not None:
         return db["bot_is_admin"]
     
@@ -109,7 +108,6 @@ async def check_bot_admin_status(bot: Client) -> bool:
         chat_member = await bot.get_chat_member(MUST_JOIN, "me")
         is_admin = chat_member.status in ["administrator", "creator"]
         
-        # Cache the result
         db["bot_is_admin"] = is_admin
         save_db(db)
         
@@ -121,13 +119,11 @@ async def check_bot_admin_status(bot: Client) -> bool:
         return is_admin
     except Exception as e:
         print(f"⚠️ Error checking bot admin status: {e}")
-        # If error, assume not admin
         db["bot_is_admin"] = False
         save_db(db)
         return False
 
 async def reset_admin_cache():
-    """Reset bot admin status cache (call when owner changes bot rights)"""
     db = load_db()
     db["bot_is_admin"] = None
     save_db(db)
@@ -182,36 +178,26 @@ async def must_join_channel(bot: Client, msg: Message):
     if not MUST_JOIN:
         return
     
-    # Check if bot is admin in channel
     bot_is_admin = await check_bot_admin_status(bot)
     
     if bot_is_admin:
-        # ========== ADMIN MODE: Real-time membership check ==========
-        # Benefit: Users can't leave and use bot (forced to stay joined)
         try:
             await bot.get_chat_member(MUST_JOIN, msg.from_user.id)
-            # User is member - allow
             return
         except UserNotParticipant:
-            # User not member - block and ask to join
             pass
         except ChatAdminRequired:
-            # Shouldn't happen in admin mode, but handle anyway
             print("⚠️ Unexpected: Bot lost admin rights")
             await reset_admin_cache()
             bot_is_admin = False
         except Exception as e:
             print(f"⚠️ Membership check error: {e}")
-            return  # Allow on error
-    
-    if not bot_is_admin:
-        # ========== NON-ADMIN MODE: Manual verification (one-time) ==========
-        # Benefit: Works without admin, but can't detect if user leaves
-        if await is_verified_user(msg.from_user.id):
-            # User already verified - allow
             return
     
-    # User needs to join - show join message
+    if not bot_is_admin:
+        if await is_verified_user(msg.from_user.id):
+            return
+    
     if MUST_JOIN.startswith("@"):
         link = f"https://t.me/{MUST_JOIN[1:]}"
         channel_name = MUST_JOIN
@@ -257,7 +243,6 @@ async def must_join_channel(bot: Client, msg: Message):
     except ChatWriteForbidden:
         pass
 
-# Check Joined Callback
 @app.on_callback_query(filters.regex("check_joined"))
 async def check_joined_callback(bot: Client, callback_query: CallbackQuery):
     if not MUST_JOIN:
@@ -265,12 +250,9 @@ async def check_joined_callback(bot: Client, callback_query: CallbackQuery):
         return
     
     user_id = callback_query.from_user.id
-    
-    # Check if bot is admin
     bot_is_admin = await check_bot_admin_status(bot)
     
     if bot_is_admin:
-        # Admin mode - verify actual membership
         try:
             await bot.get_chat_member(MUST_JOIN, user_id)
             await callback_query.answer("✅ Verified! You can now use the bot.", show_alert=True)
@@ -290,7 +272,6 @@ async def check_joined_callback(bot: Client, callback_query: CallbackQuery):
             await callback_query.answer("❌ Error verifying. Please try again.", show_alert=True)
             return
     else:
-        # Non-admin mode - manual verification
         await verify_user(user_id)
         await callback_query.answer(
             "✅ Thank you! You can now use the bot.\n\n"
@@ -344,10 +325,9 @@ async def stats(bot: Client, msg: Message):
         quote=True
     )
 
-# ==================== REFRESH ADMIN STATUS (OWNER ONLY) ====================
+# ==================== REFRESH ADMIN STATUS ====================
 @app.on_message(filters.user(OWNER_ID) & filters.command("refresh"))
 async def refresh_admin_status(bot: Client, msg: Message):
-    """Refresh bot admin status cache"""
     await reset_admin_cache()
     bot_is_admin = await check_bot_admin_status(bot)
     
@@ -397,7 +377,6 @@ async def broadcast_command(bot: Client, msg: Message):
             await broadcast_msg.copy(user_id)
             success += 1
             
-            # Update status every 10 messages
             if success % 10 == 0:
                 await status_msg.edit_text(
                     f"📡 **Broadcasting...**\n\n"
@@ -434,7 +413,6 @@ async def broadcast_command(bot: Client, msg: Message):
             failed += 1
             print(f"Error broadcasting to {user_id}: {e}")
     
-    # Final Status
     await status_msg.edit_text(
         f"📡 **Broadcast Completed!**\n\n"
         f"👥 Total Users: `{total_users}`\n"
@@ -450,7 +428,7 @@ async def broadcast_command(bot: Client, msg: Message):
 async def main(_, msg: Message):
     await msg.reply(ask_ques, reply_markup=buttons_ques)
 
-# ==================== SESSION GENERATOR (2FA FIXED) ====================
+# ==================== SESSION GENERATOR (FIXED - String Session Empty Issue) ====================
 async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=False, is_bot=False):
     if telethon:
         ty = "Telethon"
@@ -627,7 +605,6 @@ async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=F
                 return
             
             try:
-                # Don't strip password - take exactly as entered
                 password = two_step_msg.text
                 
                 if telethon:
@@ -635,7 +612,7 @@ async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=F
                 else:
                     await client.check_password(password=password)
                     
-            except (PasswordHashInvalid, PasswordHashInvalidError) as e:
+            except (PasswordHashInvalid, PasswordHashInvalidError):
                 await two_step_msg.reply(
                     "❌ **Invalid Password!**\n\n"
                     "⚠️ **Troubleshooting:**\n"
@@ -673,42 +650,100 @@ async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=F
             await client.disconnect()
             return
     
-    # Generate String Session
+    # ========== FIX: Generate String Session ==========
+    string_session = None
     try:
+        # Make sure client is fully logged in
         if telethon:
+            # For Telethon
+            if not client.is_connected():
+                await client.connect()
             string_session = client.session.save()
         else:
+            # For Pyrogram - ensure we're authorized
+            if not is_bot:
+                # Get user info to verify login
+                try:
+                    me = await client.get_me()
+                    print(f"✅ Logged in as: {me.first_name} ({me.id})")
+                except Exception as e:
+                    print(f"⚠️ Get me error: {e}")
+            
+            # Export session string
             string_session = await client.export_session_string()
+        
+        # Debug: Check if session is empty
+        if not string_session or len(string_session) < 10:
+            raise Exception("Generated session string is empty or too short!")
+        
+        print(f"✅ Session generated successfully! Length: {len(string_session)}")
+        
     except Exception as e:
+        print(f"❌ Session generation error: {e}")
         await msg.reply(
             f"❌ **Failed to generate session!**\n\n"
-            f"Error: `{str(e)}`",
+            f"Error: `{str(e)}`\n\n"
+            f"Please try again or contact support.",
             reply_markup=gen_button
         )
         await client.disconnect()
         return
     
+    # Verify session is not empty
+    if not string_session:
+        await msg.reply(
+            "❌ **Session generation failed!**\n\n"
+            "Session string is empty. Please try again.",
+            reply_markup=gen_button
+        )
+        await client.disconnect()
+        return
+    
+    # Send session to user
     text = (
         f"✅ **{ty.upper()} STRING SESSION**\n\n"
-        f"```{string_session}```\n\n"
+        f"**Session String:**\n"
+        f"`{string_session}`\n\n"
         f"⚠️ **Keep it safe and don't share!**\n"
         f"🤖 **Generated by:** @{(await bot.get_me()).username}"
     )
     
+    # Try to send to saved messages
     try:
         if not is_bot:
             await client.send_message("me", text)
-        await bot.send_message(msg.chat.id, text)
-    except KeyError:
-        pass
     except Exception as e:
-        print(f"Error sending session: {e}")
+        print(f"⚠️ Could not send to saved messages: {e}")
     
+    # Send to user in bot chat
+    try:
+        await bot.send_message(msg.chat.id, text)
+    except Exception as e:
+        print(f"❌ Error sending session to user: {e}")
+        # Try sending in smaller chunks if message is too long
+        try:
+            await bot.send_message(
+                msg.chat.id,
+                f"✅ **{ty.upper()} STRING SESSION**\n\n"
+                f"**Session String:**"
+            )
+            await bot.send_message(msg.chat.id, f"`{string_session}`")
+            await bot.send_message(
+                msg.chat.id,
+                f"⚠️ **Keep it safe and don't share!**\n"
+                f"🤖 **Generated by:** @{(await bot.get_me()).username}"
+            )
+        except Exception as e2:
+            print(f"❌ Failed to send session: {e2}")
+    
+    # Disconnect client
     await client.disconnect()
+    
+    # Send success message
     await bot.send_message(
         msg.chat.id,
         f"✅ **Successfully generated {ty} string session!**\n\n"
-        f"📬 Check your **Saved Messages**!"
+        f"📬 Check your **Saved Messages** for a copy!"
     )
 
 async def cancelled(msg):
