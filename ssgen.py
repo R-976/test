@@ -1,6 +1,3 @@
-# Session Generator Bot - SESSION STRING FIX
-# String session empty aane ka issue fix kiya
-
 import os
 import json
 import time
