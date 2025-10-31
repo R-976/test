@@ -1,13 +1,9 @@
-# Session Generator Bot - Complete Single File with Broadcast
-# Clean, Error-Free & Production Ready
-
 import os
 import json
 import time
 import logging
 import asyncio
 from os import getenv
-from dotenv import load_dotenv
 from threading import Thread
 
 from flask import Flask
@@ -46,14 +42,12 @@ from telethon.errors import (
 )
 
 # ==================== CONFIG ====================
-if os.path.exists(".env"):
-    load_dotenv(".env")
 
-API_ID = int(getenv("API_ID", "0"))
-API_HASH = getenv("API_HASH", "")
-BOT_TOKEN = getenv("BOT_TOKEN", "")
-OWNER_ID = int(getenv("OWNER_ID", "0"))
-MUST_JOIN = getenv("MUST_JOIN", None)
+API_ID = int(getenv("API_ID", "10796618"))
+API_HASH = getenv("API_HASH", "4e4b20b4e1e40c90fcb1a7658c800150")
+BOT_TOKEN = getenv("BOT_TOKEN", "8351290809:AAGNTwNVF9i39PmgI-tGp_SpEbaYBjxiveA")
+OWNER_ID = int(getenv("OWNER_ID", "5368154755"))
+MUST_JOIN = getenv("MUST_JOIN", "RomeoBot_op")
 
 # ==================== JSON DATABASE ====================
 DB_FILE = "users_db.json"
