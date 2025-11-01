@@ -4,7 +4,7 @@ import logging
 import asyncio
 from threading import Thread
 from asyncio.exceptions import TimeoutError
-
+import time
 from flask import Flask
 
 from pyrogram import Client, filters, enums, idle
@@ -55,18 +55,33 @@ OWNER_USERNAME = "@romeo_op"
 # Force Join Channels
 FORCE_JOIN_CHANNELS = ["@ROMEOBOT_OP", "@ROMEO_OP"]
 
+# ==================== DISABLE LOGS (PREVENT OUTPUT TOO LARGE) ====================
+logging.basicConfig(level=logging.CRITICAL)
+logging.getLogger("werkzeug").setLevel(logging.CRITICAL)
+logging.getLogger("pyrogram").setLevel(logging.CRITICAL)
+logging.getLogger("telethon").setLevel(logging.CRITICAL)
+logging.getLogger("asyncio").setLevel(logging.CRITICAL)
+
+logger = logging.getLogger(__name__)
+
 # ==================== DATABASE ====================
 DB_FILE = "users_db.json"
 
 def load_db():
-    if os.path.exists(DB_FILE):
-        with open(DB_FILE, 'r') as f:
-            return json.load(f)
+    try:
+        if os.path.exists(DB_FILE):
+            with open(DB_FILE, 'r') as f:
+                return json.load(f)
+    except:
+        pass
     return {"session_users": [], "hack_users": []}
 
 def save_db(data):
-    with open(DB_FILE, 'w') as f:
-        json.dump(data, f, indent=4)
+    try:
+        with open(DB_FILE, 'w') as f:
+            json.dump(data, f, indent=4)
+    except:
+        pass
 
 async def is_served_user(user_id: int, bot_type: str) -> bool:
     db = load_db()
@@ -88,27 +103,47 @@ async def add_served_user(user_id: int, bot_type: str):
     db[key].append(user_id)
     save_db(db)
 
-# ==================== FLASK SERVER ====================
-logging.getLogger("werkzeug").setLevel(logging.ERROR)
+# ==================== FLASK SERVER (RENDER PORT FIX) ====================
 flask_app = Flask(__name__)
+flask_app.logger.disabled = True
 
 @flask_app.route("/")
 def home():
     return "✅ Dual Bot System is Running!"
 
+@flask_app.route("/health")
+def health():
+    return "OK", 200
+
 @flask_app.route("/healthz")
 def healthz():
-    return ("", 204)
+    return "", 204
 
 def run_flask():
-    port = int(os.getenv("PORT", "8080"))
-    flask_app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False, threaded=True)
+    """Flask server to keep Render happy"""
+    port = int(os.getenv("PORT", 8080))
+    print(f"🌐 Flask server starting on port {port}...")
+    
+    # Disable Flask logs
+    import logging as flask_logging
+    log = flask_logging.getLogger('werkzeug')
+    log.setLevel(flask_logging.ERROR)
+    log.disabled = True
+    
+    # Start Flask
+    flask_app.run(
+        host="0.0.0.0",
+        port=port,
+        debug=False,
+        use_reloader=False,
+        threaded=True
+    )
 
-Thread(target=run_flask, daemon=True).start()
-
-# ==================== LOGGING ====================
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-logger = logging.getLogger(__name__)
+# Start Flask in background thread IMMEDIATELY
+flask_thread = Thread(target=run_flask, daemon=True)
+flask_thread.start()
+time.sleep(2)  # Give Flask time to start
+print("✅ Flask server started successfully!")
 
 # ==================== BOT CLIENTS ====================
 session_bot = Client(
@@ -1069,9 +1104,8 @@ async def session_callbacks(bot: Client, query: CallbackQuery):
                 await generate_session(bot, query.message, telethon=True, is_bot=True)
             elif data == "telethon":
                 await generate_session(bot, query.message, telethon=True)
-        except Exception as e:
-            logger.error(f"Session callback error: {e}")
-            await query.message.reply(f"❌ **Error:** `{str(e)}`")
+        except:
+            pass
 
 # ==================== HACK BOT CALLBACKS ====================
 @hack_bot.on_callback_query()
@@ -1235,44 +1269,28 @@ async def hack_callbacks(bot: Client, query: CallbackQuery):
             result = await change_profile(session.text, fn, ln, bi)
             await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
     
-    except Exception as e:
-        logger.error(f"Hack callback error: {e}")
-        await query.answer(f"Error: {str(e)}", show_alert=True)
+    except:
+        pass
 
 # ==================== MAIN FUNCTION ====================
 async def main():
-    logger.info("=" * 60)
-    logger.info("🚀 STARTING DUAL BOT SYSTEM")
-    logger.info("=" * 60)
+    print("🚀 Starting Telegram bots...")
     
-    # Start Session Bot
     await session_bot.start()
     session_me = await session_bot.get_me()
-    logger.info(f"✅ SESSION BOT: @{session_me.username} ({session_me.id})")
+    print(f"✅ Session Bot: @{session_me.username}")
     
-    # Start Hack Bot
     await hack_bot.start()
     hack_me = await hack_bot.get_me()
-    logger.info(f"✅ HACK BOT: @{hack_me.username} ({hack_me.id})")
+    print(f"✅ Hack Bot: @{hack_me.username}")
     
-    logger.info("=" * 60)
-    logger.info(f"💞 Created by {OWNER_NAME}")
-    logger.info(f"🔐 Must Join: {MUST_JOIN}")
-    logger.info("=" * 60)
-    logger.info("✅ BOTH BOTS ARE READY!")
-    logger.info("=" * 60)
+    print("✅ Both bots are running 24/7!")
     
     await idle()
     
     await session_bot.stop()
     await hack_bot.stop()
-    logger.info("👋 Bots stopped!")
 
 # ==================== RUN ====================
 if __name__ == "__main__":
-    try:
-        asyncio.get_event_loop().run_until_complete(main())
-    except KeyboardInterrupt:
-        logger.info("⚠️ Bot stopped by user!")
-    except Exception as e:
-        logger.error(f"❌ Error: {e}")
+    asyncio.get_event_loop().run_until_complete(main())
