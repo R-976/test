@@ -566,15 +566,13 @@ PM_BUTTON_2 = InlineKeyboardMarkup([[InlineKeyboardButton("● 𝐇𝐀𝐂𝐊 
 
 HACK_MODS_2 = InlineKeyboardMarkup([
     [InlineKeyboardButton("A", callback_data="hack_A"), InlineKeyboardButton("B", callback_data="hack_B"), 
-     InlineKeyboardButton("C", callback_data="hack_C"), InlineKeyboardButton("D", callback_data="hack_D"), 
-     InlineKeyboardButton("E", callback_data="hack_E")],
-    [InlineKeyboardButton("F", callback_data="hack_F"), InlineKeyboardButton("G", callback_data="hack_G"), 
-     InlineKeyboardButton("H", callback_data="hack_H"), InlineKeyboardButton("I", callback_data="hack_I"), 
-     InlineKeyboardButton("J", callback_data="hack_J")],
-    [InlineKeyboardButton("K", callback_data="hack_K"), InlineKeyboardButton("L", callback_data="hack_L"), 
-     InlineKeyboardButton("M", callback_data="hack_M"), InlineKeyboardButton("N", callback_data="hack_N"), 
-     InlineKeyboardButton("O", callback_data="hack_O")],
-    [InlineKeyboardButton("P", callback_data="hack_P")],
+     InlineKeyboardButton("C", callback_data="hack_C"), InlineKeyboardButton("D", callback_data="hack_D")], 
+    [InlineKeyboardButton("E", callback_data="hack_E"), InlineKeyboardButton("F", callback_data="hack_F"),
+     InlineKeyboardButton("G", callback_data="hack_G"), InlineKeyboardButton("H", callback_data="hack_H")],
+    [InlineKeyboardButton("I", callback_data="hack_I"), InlineKeyboardButton("J", callback_data="hack_J"),
+     InlineKeyboardButton("K", callback_data="hack_K"), InlineKeyboardButton("L", callback_data="hack_L")], 
+    [InlineKeyboardButton("M", callback_data="hack_M"), InlineKeyboardButton("N", callback_data="hack_N"), 
+     InlineKeyboardButton("O", callback_data="hack_O"), InlineKeyboardButton("P", callback_data="hack_P")]
 ])
 
 # ==================== RIGHTS - BOT 2 ====================
