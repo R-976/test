@@ -19,9 +19,9 @@ from telethon.tl.functions.auth import ResetAuthorizationsRequest
 from pyromod import listen
 
 # ==================== CONFIG ====================
-API_ID = int(os.getenv("API_ID", ""))
-API_HASH = os.getenv("API_HASH", "")
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+API_ID = int(os.getenv("API_ID", "10796618"))
+API_HASH = os.getenv("API_HASH", "4e4b20b4e1e40c90fcb1a7658c800150")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8351290809:AAGNTwNVF9i39PmgI-tGp_SpEbaYBjxiveA")
 START_PIC = os.getenv("START_PIC", "https://telegra.ph//file/a9a90059ae47fa840b0b3.jpg")
 
 # Universal Force Join Channels - Edit karne ke liye sirf yahan change karo
