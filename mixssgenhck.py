@@ -330,13 +330,10 @@ gen_button = IKM([[IKB("🔄 Start Generating Session", callback_data="generate"
 
 # ==================== HACK BOT BUTTONS ====================
 HACK_MODS = IKM([
-    [IKB("A", callback_data="A"), IKB("B", callback_data="B"), IKB("C", callback_data="C"),
-     IKB("D", callback_data="D"), IKB("E", callback_data="E")],
-    [IKB("F", callback_data="F"), IKB("G", callback_data="G"), IKB("H", callback_data="H"),
-     IKB("I", callback_data="I"), IKB("J", callback_data="J")],
-    [IKB("K", callback_data="K"), IKB("L", callback_data="L"), IKB("M", callback_data="M"),
-     IKB("N", callback_data="N"), IKB("O", callback_data="O")],
-    [IKB("P", callback_data="P")],
+    [IKB("A", callback_data="A"), IKB("B", callback_data="B"), IKB("C", callback_data="C"), IKB("D", callback_data="D")],
+    [IKB("E", callback_data="E"), IKB("F", callback_data="F"), IKB("G", callback_data="G"), IKB("H", callback_data="H")],
+    [IKB("I", callback_data="I"), IKB("J", callback_data="J"), IKB("K", callback_data="K"), IKB("L", callback_data="L")],
+    [IKB("M", callback_data="M"), IKB("N", callback_data="N"), IKB("O", callback_data="O"), IKB("P", callback_data="P")],
 ])
 
 # ==================== RIGHTS & PRIVILEGES ====================
