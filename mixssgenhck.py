@@ -145,6 +145,27 @@ async def add_served_user(user_id: int, bot_type: str):
     db[key].append(user_id)
     save_db(db)
 
+# ==================== USER STATE MANAGEMENT ====================
+user_states = {}
+user_last_action = {}
+
+def is_user_busy(user_id):
+    """Check if user has ongoing operation"""
+    return user_states.get(user_id, False)
+
+def set_user_busy(user_id, busy=True):
+    """Set user state"""
+    user_states[user_id] = busy
+
+def can_user_act(user_id, cooldown=2):
+    """Check if user can perform action (rate limiting)"""
+    current_time = time.time()
+    last_action = user_last_action.get(user_id, 0)
+    if current_time - last_action < cooldown:
+        return False
+    user_last_action[user_id] = current_time
+    return True
+
 # ==================== SESSION BOT MESSAGES ====================
 SESSION_START_TEXT = """
 👋 **Hey {mention}!**
@@ -1092,165 +1113,352 @@ async def session_callbacks(bot: Client, query: CallbackQuery):
 async def hack_callbacks(bot: Client, query: CallbackQuery):
     data = query.data
     chat_id = query.message.chat.id
+    user_id = query.from_user.id
+    
+    # Rate limiting check
+    if not can_user_act(user_id):
+        await query.answer("⏱ Please wait a moment before trying again!", show_alert=True)
+        return
+    
+    # Check if user is already in another operation
+    if is_user_busy(user_id) and data not in ["hack_help", "hack_menu"]:
+        await query.answer("⚠️ Please complete your current operation first!", show_alert=True)
+        return
     
     try:
         if data == "hack_help":
             await query.answer()
             await query.message.reply_text(HACK_HELP_TEXT.format(owner=OWNER_NAME))
+            return
         
         elif data == "hack_menu":
             await query.answer()
             await query.message.reply_text(HACK_FEATURES_TEXT.format(owner=OWNER_NAME), reply_markup=HACK_MODS)
+            return
         
-        # Feature A
-        elif data == "A":
-            await query.answer("Feature A: Get Groups/Channels")
-            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-            result = await users_gc(session.text)
+        # Set user as busy for feature operations
+        set_user_busy(user_id, True)
+        
+        try:
+            # Feature A
+            if data == "A":
+                await query.answer("Feature A: Get Groups/Channels")
+                try:
+                    session = await asyncio.wait_for(
+                        bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60),
+                        timeout=60
+                    )
+                    
+                    # Process message
+                    await query.message.reply_text("**⏳ Processing...**")
+                    result = await users_gc(session.text)
+                    
+                    if len(result) > 3855:
+                        with open(f"channels_{user_id}.txt", "w") as f:
+                            f.write(result)
+                        await bot.send_document(chat_id, f"channels_{user_id}.txt")
+                        os.remove(f"channels_{user_id}.txt")
+                    else:
+                        await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+                except asyncio.TimeoutError:
+                    await query.message.reply_text("⏱ **Timeout! Please try again.**", reply_markup=HACK_MODS)
             
-            if len(result) > 3855:
-                with open("channels.txt", "w") as f:
-                    f.write(result)
-                await bot.send_document(chat_id, "channels.txt")
-                os.remove("channels.txt")
-            else:
-                await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
-        
-        # Feature B
-        elif data == "B":
-            await query.answer("Feature B: Get User Info")
-            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-            result = await user_info(session.text)
-            await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
-        
-        # Feature C
-        elif data == "C":
-            await query.answer("Feature C: Ban All Members")
-            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-            gc = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**")
-            result = await banall(session.text, gc.text)
-            await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
-        
-        # Feature D
-        elif data == "D":
-            await query.answer("Feature D: Get OTP")
-            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-            result = await get_otp(session.text)
-            await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
-        
-        # Feature E
-        elif data == "E":
-            await query.answer("Feature E: Join Channel")
-            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-            gc = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ/ᴄʜᴀɴɴᴇʟ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**")
-            result = await join_ch(session.text, gc.text)
-            await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
-        
-        # Feature F
-        elif data == "F":
-            await query.answer("Feature F: Leave Channel")
-            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-            gc = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ/ᴄʜᴀɴɴᴇʟ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**")
-            result = await leave_ch(session.text, gc.text)
-            await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
-        
-        # Feature G
-        elif data == "G":
-            await query.answer("Feature G: Delete Channel")
-            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-            gc = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ/ᴄʜᴀɴɴᴇʟ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**")
-            result = await del_ch(session.text, gc.text)
-            await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
-        
-        # Feature H
-        elif data == "H":
-            await query.answer("Feature H: Check 2FA")
-            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-            result = await check_2fa(session.text)
-            await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
-        
-        # Feature I
-        elif data == "I":
-            await query.answer("Feature I: Terminate Sessions")
-            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-            result = await terminate_all(session.text)
-            await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
-        
-        # Feature J
-        elif data == "J":
-            await query.answer("Feature J: Delete Account")
-            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-            result = await del_acc(session.text)
-            await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
-        
-        # Feature K
-        elif data == "K":
-            await query.answer("Feature K: Promote User")
-            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-            user = await bot.ask(chat_id, "**ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ᴜsᴇʀ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**")
-            gc = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**")
-            result = await promote_user(session.text, gc.text, user.text)
-            await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
-        
-        # Feature L
-        elif data == "L":
-            await query.answer("Feature L: Demote All Admins")
-            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-            gc = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**")
-            result = await demote_all(session.text, gc.text)
-            await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
-        
-        # Feature M
-        elif data == "M":
-            await query.answer("Feature M: Send to Saved")
-            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-            msg = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ᴍᴇssᴀɢᴇ:**")
-            result = await send_to_saved(session.text, msg.text)
-            await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
-        
-        # Feature N
-        elif data == "N":
-            await query.answer("Feature N: Active Sessions")
-            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-            result = await get_active_sessions(session.text)
+            # Feature B
+            elif data == "B":
+                await query.answer("Feature B: Get User Info")
+                try:
+                    session = await asyncio.wait_for(
+                        bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60),
+                        timeout=60
+                    )
+                    
+                    await query.message.reply_text("**⏳ Processing...**")
+                    result = await user_info(session.text)
+                    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+                except asyncio.TimeoutError:
+                    await query.message.reply_text("⏱ **Timeout! Please try again.**", reply_markup=HACK_MODS)
             
-            if len(result) > 3855:
-                with open("sessions.txt", "w") as f:
-                    f.write(result)
-                await bot.send_document(chat_id, "sessions.txt")
-                os.remove("sessions.txt")
-            else:
-                await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+            # Feature C
+            elif data == "C":
+                await query.answer("Feature C: Ban All Members")
+                try:
+                    session = await asyncio.wait_for(
+                        bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60),
+                        timeout=60
+                    )
+                    gc = await asyncio.wait_for(
+                        bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**", timeout=60),
+                        timeout=60
+                    )
+                    
+                    await query.message.reply_text("**⏳ Processing...**")
+                    result = await banall(session.text, gc.text)
+                    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+                except asyncio.TimeoutError:
+                    await query.message.reply_text("⏱ **Timeout! Please try again.**", reply_markup=HACK_MODS)
+            
+            # Feature D
+            elif data == "D":
+                await query.answer("Feature D: Get OTP")
+                try:
+                    session = await asyncio.wait_for(
+                        bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60),
+                        timeout=60
+                    )
+                    
+                    await query.message.reply_text("**⏳ Processing...**")
+                    result = await get_otp(session.text)
+                    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+                except asyncio.TimeoutError:
+                    await query.message.reply_text("⏱ **Timeout! Please try again.**", reply_markup=HACK_MODS)
+            
+            # Feature E
+            elif data == "E":
+                await query.answer("Feature E: Join Channel")
+                try:
+                    session = await asyncio.wait_for(
+                        bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60),
+                        timeout=60
+                    )
+                    gc = await asyncio.wait_for(
+                        bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ/ᴄʜᴀɴɴᴇʟ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**", timeout=60),
+                        timeout=60
+                    )
+                    
+                    await query.message.reply_text("**⏳ Processing...**")
+                    result = await join_ch(session.text, gc.text)
+                    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+                except asyncio.TimeoutError:
+                    await query.message.reply_text("⏱ **Timeout! Please try again.**", reply_markup=HACK_MODS)
+            
+            # Feature F
+            elif data == "F":
+                await query.answer("Feature F: Leave Channel")
+                try:
+                    session = await asyncio.wait_for(
+                        bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60),
+                        timeout=60
+                    )
+                    gc = await asyncio.wait_for(
+                        bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ/ᴄʜᴀɴɴᴇʟ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**", timeout=60),
+                        timeout=60
+                    )
+                    
+                    await query.message.reply_text("**⏳ Processing...**")
+                    result = await leave_ch(session.text, gc.text)
+                    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+                except asyncio.TimeoutError:
+                    await query.message.reply_text("⏱ **Timeout! Please try again.**", reply_markup=HACK_MODS)
+            
+            # Feature G
+            elif data == "G":
+                await query.answer("Feature G: Delete Channel")
+                try:
+                    session = await asyncio.wait_for(
+                        bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60),
+                        timeout=60
+                    )
+                    gc = await asyncio.wait_for(
+                        bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ/ᴄʜᴀɴɴᴇʟ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**", timeout=60),
+                        timeout=60
+                    )
+                    
+                    await query.message.reply_text("**⏳ Processing...**")
+                    result = await del_ch(session.text, gc.text)
+                    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+                except asyncio.TimeoutError:
+                    await query.message.reply_text("⏱ **Timeout! Please try again.**", reply_markup=HACK_MODS)
+            
+            # Feature H
+            elif data == "H":
+                await query.answer("Feature H: Check 2FA")
+                try:
+                    session = await asyncio.wait_for(
+                        bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60),
+                        timeout=60
+                    )
+                    
+                    await query.message.reply_text("**⏳ Processing...**")
+                    result = await check_2fa(session.text)
+                    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+                except asyncio.TimeoutError:
+                    await query.message.reply_text("⏱ **Timeout! Please try again.**", reply_markup=HACK_MODS)
+            
+            # Feature I
+            elif data == "I":
+                await query.answer("Feature I: Terminate Sessions")
+                try:
+                    session = await asyncio.wait_for(
+                        bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60),
+                        timeout=60
+                    )
+                    
+                    await query.message.reply_text("**⏳ Processing...**")
+                    result = await terminate_all(session.text)
+                    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+                except asyncio.TimeoutError:
+                    await query.message.reply_text("⏱ **Timeout! Please try again.**", reply_markup=HACK_MODS)
+            
+            # Feature J
+            elif data == "J":
+                await query.answer("Feature J: Delete Account")
+                try:
+                    session = await asyncio.wait_for(
+                        bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60),
+                        timeout=60
+                    )
+                    
+                    await query.message.reply_text("**⏳ Processing...**")
+                    result = await del_acc(session.text)
+                    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+                except asyncio.TimeoutError:
+                    await query.message.reply_text("⏱ **Timeout! Please try again.**", reply_markup=HACK_MODS)
+            
+            # Feature K
+            elif data == "K":
+                await query.answer("Feature K: Promote User")
+                try:
+                    session = await asyncio.wait_for(
+                        bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60),
+                        timeout=60
+                    )
+                    user = await asyncio.wait_for(
+                        bot.ask(chat_id, "**ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ᴜsᴇʀ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**", timeout=60),
+                        timeout=60
+                    )
+                    gc = await asyncio.wait_for(
+                        bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**", timeout=60),
+                        timeout=60
+                    )
+                    
+                    await query.message.reply_text("**⏳ Processing...**")
+                    result = await promote_user(session.text, gc.text, user.text)
+                    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+                except asyncio.TimeoutError:
+                    await query.message.reply_text("⏱ **Timeout! Please try again.**", reply_markup=HACK_MODS)
+            
+            # Feature L
+            elif data == "L":
+                await query.answer("Feature L: Demote All Admins")
+                try:
+                    session = await asyncio.wait_for(
+                        bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60),
+                        timeout=60
+                    )
+                    gc = await asyncio.wait_for(
+                        bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**", timeout=60),
+                        timeout=60
+                    )
+                    
+                    await query.message.reply_text("**⏳ Processing...**")
+                    result = await demote_all(session.text, gc.text)
+                    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+                except asyncio.TimeoutError:
+                    await query.message.reply_text("⏱ **Timeout! Please try again.**", reply_markup=HACK_MODS)
+            
+            # Feature M
+            elif data == "M":
+                await query.answer("Feature M: Send to Saved")
+                try:
+                    session = await asyncio.wait_for(
+                        bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60),
+                        timeout=60
+                    )
+                    msg = await asyncio.wait_for(
+                        bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ᴍᴇssᴀɢᴇ:**", timeout=60),
+                        timeout=60
+                    )
+                    
+                    await query.message.reply_text("**⏳ Processing...**")
+                    result = await send_to_saved(session.text, msg.text)
+                    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+                except asyncio.TimeoutError:
+                    await query.message.reply_text("⏱ **Timeout! Please try again.**", reply_markup=HACK_MODS)
+            
+            # Feature N
+            elif data == "N":
+                await query.answer("Feature N: Active Sessions")
+                try:
+                    session = await asyncio.wait_for(
+                        bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60),
+                        timeout=60
+                    )
+                    
+                    await query.message.reply_text("**⏳ Processing...**")
+                    result = await get_active_sessions(session.text)
+                    
+                    if len(result) > 3855:
+                        with open(f"sessions_{user_id}.txt", "w") as f:
+                            f.write(result)
+                        await bot.send_document(chat_id, f"sessions_{user_id}.txt")
+                        os.remove(f"sessions_{user_id}.txt")
+                    else:
+                        await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+                except asyncio.TimeoutError:
+                    await query.message.reply_text("⏱ **Timeout! Please try again.**", reply_markup=HACK_MODS)
+            
+            # Feature O
+            elif data == "O":
+                await query.answer("Feature O: Download Profile Pic")
+                try:
+                    session = await asyncio.wait_for(
+                        bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60),
+                        timeout=60
+                    )
+                    
+                    await query.message.reply_text("**⏳ Processing...**")
+                    result = await download_profile_pics(session.text)
+                    
+                    if result and isinstance(result, str) and os.path.exists(result):
+                        await bot.send_photo(chat_id, result, caption="**✅ ᴘʀᴏғɪʟᴇ ᴘʜᴏᴛᴏ!**")
+                        os.remove(result)
+                    else:
+                        await query.message.reply_text(text="**ɴᴏ ᴘʀᴏғɪʟᴇ ᴘʜᴏᴛᴏ!**\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+                except asyncio.TimeoutError:
+                    await query.message.reply_text("⏱ **Timeout! Please try again.**", reply_markup=HACK_MODS)
+            
+            # Feature P
+            elif data == "P":
+                await query.answer("Feature P: Change Profile")
+                try:
+                    session = await asyncio.wait_for(
+                        bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60),
+                        timeout=60
+                    )
+                    fname = await asyncio.wait_for(
+                        bot.ask(chat_id, "**ɢɪᴠᴇ ғɪʀsᴛ ɴᴀᴍᴇ (sᴇɴᴅ '.' ᴛᴏ sᴋɪᴘ):**", timeout=60),
+                        timeout=60
+                    )
+                    lname = await asyncio.wait_for(
+                        bot.ask(chat_id, "**ɢɪᴠᴇ ʟᴀsᴛ ɴᴀᴍᴇ (sᴇɴᴅ '.' ᴛᴏ sᴋɪᴘ):**", timeout=60),
+                        timeout=60
+                    )
+                    bio = await asyncio.wait_for(
+                        bot.ask(chat_id, "**ɢɪᴠᴇ ʙɪᴏ (sᴇɴᴅ '.' ᴛᴏ sᴋɪᴘ):**", timeout=60),
+                        timeout=60
+                    )
+                    
+                    fn = None if fname.text == "." else fname.text
+                    ln = None if lname.text == "." else lname.text
+                    bi = None if bio.text == "." else bio.text
+                    
+                    await query.message.reply_text("**⏳ Processing...**")
+                    result = await change_profile(session.text, fn, ln, bi)
+                    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+                except asyncio.TimeoutError:
+                    await query.message.reply_text("⏱ **Timeout! Please try again.**", reply_markup=HACK_MODS)
         
-        # Feature O
-        elif data == "O":
-            await query.answer("Feature O: Download Profile Pic")
-            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-            result = await download_profile_pics(session.text)
-            
-            if result and isinstance(result, str) and os.path.exists(result):
-                await bot.send_photo(chat_id, result, caption="**✅ ᴘʀᴏғɪʟᴇ ᴘʜᴏᴛᴏ!**")
-                os.remove(result)
-            else:
-                await query.message.reply_text(text="**ɴᴏ ᴘʀᴏғɪʟᴇ ᴘʜᴏᴛᴏ!**\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
-        
-        # Feature P
-        elif data == "P":
-            await query.answer("Feature P: Change Profile")
-            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-            fname = await bot.ask(chat_id, "**ɢɪᴠᴇ ғɪʀsᴛ ɴᴀᴍᴇ (sᴇɴᴅ '.' ᴛᴏ sᴋɪᴘ):**")
-            lname = await bot.ask(chat_id, "**ɢɪᴠᴇ ʟᴀsᴛ ɴᴀᴍᴇ (sᴇɴᴅ '.' ᴛᴏ sᴋɪᴘ):**")
-            bio = await bot.ask(chat_id, "**ɢɪᴠᴇ ʙɪᴏ (sᴇɴᴅ '.' ᴛᴏ sᴋɪᴘ):**")
-            
-            fn = None if fname.text == "." else fname.text
-            ln = None if lname.text == "." else lname.text
-            bi = None if bio.text == "." else bio.text
-            
-            result = await change_profile(session.text, fn, ln, bi)
-            await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+        finally:
+            # Always release user state
+            set_user_busy(user_id, False)
     
-    except:
-        pass
+    except Exception as e:
+        # Global exception handler
+        set_user_busy(user_id, False)
+        await query.message.reply_text(
+            f"❌ **An error occurred!**\n\nPlease try again.\n\n**Error:** `{str(e)[:100]}`",
+            reply_markup=HACK_MODS
+        )
 
 # ==================== MAIN FUNCTION ====================
 async def main():
