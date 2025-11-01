@@ -66,9 +66,9 @@ logging.getLogger("werkzeug").setLevel(logging.ERROR)
 # ╚═══════════════════════════════════════════════════════════════╝
 
 # ==================== CONFIG - BOT 1 ====================
-API_ID_1 = int(getenv("API_ID_1", "10796618"))
-API_HASH_1 = getenv("API_HASH_1", "4e4b20b4e1e40c90fcb1a7658c800150")
-BOT_TOKEN_1 = getenv("BOT_TOKEN_1", "8351290809:AAGNTwNVF9i39PmgI-tGp_SpEbaYBjxiveA")
+API_ID_1 = int(getenv("API_ID_1", "19031598"))
+API_HASH_1 = getenv("API_HASH_1", "14e2d2af6e6dc769e60991cab81027d5")
+BOT_TOKEN_1 = getenv("BOT_TOKEN_1", "5665710621:AAG7WEd9gI_atXqTm4LLLZH-BMEulA4OmYE")
 OWNER_ID_1 = int(getenv("OWNER_ID_1", "5368154755"))
 MUST_JOIN_1 = getenv("MUST_JOIN_1", "RomeoBot_op")
 
@@ -519,9 +519,9 @@ async def handle_callbacks_1(bot: Client, callback_query: CallbackQuery):
 # ╚═══════════════════════════════════════════════════════════════╝
 
 # ==================== CONFIG - BOT 2 ====================
-API_ID_2 = int(getenv("API_ID_2", "10796618"))
-API_HASH_2 = getenv("API_HASH_2", "4e4b20b4e1e40c90fcb1a7658c800150")
-BOT_TOKEN_2 = getenv("BOT_TOKEN_2", "7936981734:AAEh17m4-gE7bq9Ky5H-QP1bkRTlP_YaIGI")
+API_ID_2 = int(getenv("API_ID_2", "19031598"))
+API_HASH_2 = getenv("API_HASH_2", "14e2d2af6e6dc769e60991cab81027d5")
+BOT_TOKEN_2 = getenv("BOT_TOKEN_2", "5499976017:AAHnP-FDpDvxZaoRRMtKd4G9x_i7JaGFUbM")
 START_PIC_2 = getenv("START_PIC_2", "https://telegra.ph//file/a9a90059ae47fa840b0b3.jpg")
 
 FORCE_JOIN_CHANNELS_2 = ["@ROMEOBOT_OP", "@ROMEO_OP"]
