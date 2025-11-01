@@ -32,26 +32,35 @@ from telethon.errors import (
     PhoneCodeExpiredError, SessionPasswordNeededError, PasswordHashInvalidError
 )
 
-# ==================== FLASK SERVER (SHARED) ====================
+# ==================== LOGGING FIX - OUTPUT REDUCE KARNE KE LIYE ====================
+logging.basicConfig(
+    level=logging.ERROR,  # WARNING se ERROR kar diya
+    format="%(levelname)s - %(message)s",  # Timestamp remove kiya
+    handlers=[logging.StreamHandler()]
+)
+logging.getLogger("pyrogram").setLevel(logging.ERROR)
+logging.getLogger("telethon").setLevel(logging.ERROR)
 logging.getLogger("werkzeug").setLevel(logging.ERROR)
+
+# ==================== FLASK SERVER (OPTIMIZED) ====================
 flask_app = Flask(__name__)
+flask_app.logger.disabled = True  # Flask logs disable
 
 @flask_app.route("/")
 def home():
-    return "✅ Both Bots are running!"
+    return "OK", 200
 
 @flask_app.route("/healthz")
 def healthz():
-    return ("", 204)
+    return "", 204
 
 def run_flask():
     port = int(os.getenv("PORT", "8080"))
+    import logging as flask_log
+    flask_log.getLogger('werkzeug').disabled = True
     flask_app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False, threaded=True)
 
 Thread(target=run_flask, daemon=True).start()
-
-# ==================== LOGGING ====================
-logging.basicConfig(level=logging.WARNING, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # ╔═══════════════════════════════════════════════════════════════╗
 # ║           BOT 1: SESSION GENERATOR BOT                        ║
@@ -1200,9 +1209,9 @@ async def feature_p_2(client, query):
 # ╚═══════════════════════════════════════════════════════════════╝
 
 async def main():
-    print("=" * 60)
+    print("=" * 40)
     print("🚀 Starting Both Bots...")
-    print("=" * 60)
+    print("=" * 40)
     
     # Start Bot 1
     await session_gen_bot.start()
@@ -1214,9 +1223,9 @@ async def main():
     me2 = await recovery_bot.get_me()
     print(f"✅ Bot 2 (Recovery/Hack): @{me2.username}")
     
-    print("=" * 60)
+    print("=" * 40)
     print("✅ Both Bots are Running!")
-    print("=" * 60)
+    print("=" * 40)
     
     # Keep running
     await idle()
