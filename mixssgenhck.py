@@ -2,11 +2,8 @@ import os
 import json
 import logging
 import asyncio
-from threading import Thread
 from asyncio.exceptions import TimeoutError
 import time
-from flask import Flask
-
 from pyrogram import Client, filters, enums, idle
 from pyrogram.raw import functions
 from pyrogram.types import Message, InlineKeyboardMarkup as IKM, InlineKeyboardButton as IKB, CallbackQuery, ChatPrivileges
@@ -31,31 +28,11 @@ from telethon.tl.functions.channels import (
 from telethon.tl.types import ChannelParticipantsAdmins, ChatBannedRights
 from telethon.tl.functions.auth import ResetAuthorizationsRequest
 
-# ==================== CONFIG ====================
-API_ID = int(os.getenv("API_ID", "10796618"))
-API_HASH = os.getenv("API_HASH", "4e4b20b4e1e40c90fcb1a7658c800150")
+# ==================== FLASK SERVER FOR RENDER ====================
 
-# SESSION GENERATOR BOT TOKEN
-SESSION_BOT_TOKEN = os.getenv("SESSION_BOT_TOKEN", "5665710621:AAG7WEd9gI_atXqTm4LLLZH-BMEulA4OmYE")
+from threading import Thread
+from flask import Flask
 
-# HACK/MANAGER BOT TOKEN  
-HACK_BOT_TOKEN = os.getenv("HACK_BOT_TOKEN", "5499976017:AAHnP-FDpDvxZaoRRMtKd4G9x_i7JaGFUbM")
-
-OWNER_ID = int(os.getenv("OWNER_ID", "5368154755"))
-MUST_JOIN = os.getenv("MUST_JOIN", "RomeoBot_op")
-
-# SEPARATE PICTURES FOR BOTH BOTS
-SESSION_START_PIC = os.getenv("SESSION_START_PIC", "https://telegra.ph//file/a9a90059ae47fa840b0b3.jpg")
-HACK_START_PIC = os.getenv("HACK_START_PIC", "https://telegra.ph//file/a9a90059ae47fa840b0b3.jpg")
-
-# Owner Info
-OWNER_NAME = "𝕾🅡︎🅐︎🅙︎𝕾"
-OWNER_USERNAME = "@romeo_op"
-
-# Force Join Channels
-FORCE_JOIN_CHANNELS = ["@ROMEOBOT_OP", "@ROMEO_OP"]
-
-# ==================== DISABLE LOGS (PREVENT OUTPUT TOO LARGE) ====================
 logging.basicConfig(level=logging.CRITICAL)
 logging.getLogger("werkzeug").setLevel(logging.CRITICAL)
 logging.getLogger("pyrogram").setLevel(logging.CRITICAL)
@@ -63,6 +40,73 @@ logging.getLogger("telethon").setLevel(logging.CRITICAL)
 logging.getLogger("asyncio").setLevel(logging.CRITICAL)
 
 logger = logging.getLogger(__name__)
+
+
+flask_app = Flask(__name__)
+flask_app.logger.disabled = True
+
+@flask_app.route("/")
+def home():
+    return "✅ Dual Bot System is Running!"
+
+@flask_app.route("/health")
+def health():
+    return "OK", 200
+
+@flask_app.route("/healthz")
+def healthz():
+    return "", 204
+
+def run_flask():
+    """Flask server to keep Render happy"""
+    port = int(os.getenv("PORT", 8080))
+    print(f"🌐 Flask server starting on port {port}...")
+    import logging as flask_logging
+    log = flask_logging.getLogger('werkzeug')
+    log.setLevel(flask_logging.ERROR)
+    log.disabled = True
+    flask_app.run(
+        host="0.0.0.0",
+        port=port,
+        debug=False,
+        use_reloader=False,
+        threaded=True
+    )
+flask_thread = Thread(target=run_flask, daemon=True)
+flask_thread.start()
+time.sleep(2)
+print("✅ Flask server started successfully!")
+
+# ==================== CONFIG ====================
+API_ID = int(os.getenv("API_ID", "10796618"))
+API_HASH = os.getenv("API_HASH", "4e4b20b4e1e40c90fcb1a7658c800150")
+SESSION_BOT_TOKEN = os.getenv("SESSION_BOT_TOKEN", "5665710621:AAG7WEd9gI_atXqTm4LLLZH-BMEulA4OmYE")
+HACK_BOT_TOKEN = os.getenv("HACK_BOT_TOKEN", "5499976017:AAHnP-FDpDvxZaoRRMtKd4G9x_i7JaGFUbM")
+OWNER_ID = int(os.getenv("OWNER_ID", "5368154755"))
+MUST_JOIN = os.getenv("MUST_JOIN", "RomeoBot_op")
+SESSION_START_PIC = os.getenv("SESSION_START_PIC", "https://telegra.ph//file/a9a90059ae47fa840b0b3.jpg")
+HACK_START_PIC = os.getenv("HACK_START_PIC", "https://telegra.ph//file/a9a90059ae47fa840b0b3.jpg")
+
+OWNER_NAME = "𝕾🅡︎🅐︎🅙︎𝕾"
+OWNER_USERNAME = "@romeo_op"
+FORCE_JOIN_CHANNELS = ["@ROMEOBOT_OP", "@ROMEO_OP"]
+
+# ==================== BOT CLIENTS ====================
+session_bot = Client(
+    "SessionGeneratorBot",
+    api_id=API_ID,
+    api_hash=API_HASH,
+    bot_token=SESSION_BOT_TOKEN,
+    in_memory=True
+)
+
+hack_bot = Client(
+    "HackManagerBot",
+    api_id=API_ID,
+    api_hash=API_HASH,
+    bot_token=HACK_BOT_TOKEN,
+    in_memory=True
+)
 
 # ==================== DATABASE ====================
 DB_FILE = "users_db.json"
@@ -102,65 +146,6 @@ async def add_served_user(user_id: int, bot_type: str):
         db[key] = []
     db[key].append(user_id)
     save_db(db)
-
-# ==================== FLASK SERVER (RENDER PORT FIX) ====================
-flask_app = Flask(__name__)
-flask_app.logger.disabled = True
-
-@flask_app.route("/")
-def home():
-    return "✅ Dual Bot System is Running!"
-
-@flask_app.route("/health")
-def health():
-    return "OK", 200
-
-@flask_app.route("/healthz")
-def healthz():
-    return "", 204
-
-def run_flask():
-    """Flask server to keep Render happy"""
-    port = int(os.getenv("PORT", 8080))
-    print(f"🌐 Flask server starting on port {port}...")
-    
-    # Disable Flask logs
-    import logging as flask_logging
-    log = flask_logging.getLogger('werkzeug')
-    log.setLevel(flask_logging.ERROR)
-    log.disabled = True
-    
-    # Start Flask
-    flask_app.run(
-        host="0.0.0.0",
-        port=port,
-        debug=False,
-        use_reloader=False,
-        threaded=True
-    )
-
-# Start Flask in background thread IMMEDIATELY
-flask_thread = Thread(target=run_flask, daemon=True)
-flask_thread.start()
-time.sleep(2)  # Give Flask time to start
-print("✅ Flask server started successfully!")
-
-# ==================== BOT CLIENTS ====================
-session_bot = Client(
-    "SessionGeneratorBot",
-    api_id=API_ID,
-    api_hash=API_HASH,
-    bot_token=SESSION_BOT_TOKEN,
-    in_memory=True
-)
-
-hack_bot = Client(
-    "HackManagerBot",
-    api_id=API_ID,
-    api_hash=API_HASH,
-    bot_token=HACK_BOT_TOKEN,
-    in_memory=True
-)
 
 # ==================== SESSION BOT MESSAGES ====================
 SESSION_START_TEXT = """
