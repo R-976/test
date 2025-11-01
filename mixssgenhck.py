@@ -595,7 +595,7 @@ async def generate_session(bot: Client, msg: Message, telethon=False, old_pyro=F
         if not is_bot:
             phone_code_msg = await bot.ask(
                 user_id,
-                "📨 **OTP sent to your Telegram!**\n\n📝 Send OTP in format: `1 2 3 4 5`\n⏱ Timeout: 10 minutes\n\n❌ Click /cancel to cancel",
+                "📨 **OTP sent to your Telegram!**\n\n📝 Send OTP in format: `123 45`\n⏱ Timeout: 10 minutes\n\n❌ Click /cancel to cancel",
                 filters=filters.text, timeout=600
             )
             if await cancelled(phone_code_msg):
