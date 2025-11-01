@@ -184,7 +184,7 @@ SESSION_START_TEXT = """
 /stats - Bot statistics (Owner only)
 
 👨‍💻 **Owner:** {owner}
-📢 **Channel:** @{channel}
+📢 **Support:** @{channel}
 """
 
 SESSION_HELP_TEXT = """
@@ -381,7 +381,7 @@ async def session_start(bot: Client, msg: Message):
     
     buttons = IKM([
         [IKB("🔷 Generate Session 🔷", callback_data="generate")],
-        [IKB("📚 Help", callback_data="session_help"), IKB("📢 Channel", url=f"https://t.me/{MUST_JOIN[1:] if MUST_JOIN.startswith('@') else MUST_JOIN}")]
+        [IKB("📚 Help", callback_data="session_help"), IKB("📢 SUPPORT", url=f"https://t.me/{MUST_JOIN[1:] if MUST_JOIN.startswith('@') else MUST_JOIN}")]
     ])
     
     await msg.reply_photo(
@@ -489,7 +489,7 @@ async def hack_start(bot: Client, msg: Message):
     
     buttons = IKM([
         [IKB("🔥 Open Features 🔥", callback_data="hack_menu")],
-        [IKB("📚 Help", callback_data="hack_help"), IKB("📢 Channel", url=f"https://t.me/{MUST_JOIN[1:] if MUST_JOIN.startswith('@') else MUST_JOIN}")]
+        [IKB("📚 Help", callback_data="hack_help"), IKB("📢 SUPPORT", url=f"https://t.me/{MUST_JOIN[1:] if MUST_JOIN.startswith('@') else MUST_JOIN}")]
     ])
     
     await msg.reply_photo(
