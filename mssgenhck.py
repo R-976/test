@@ -10,9 +10,12 @@ from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, 
 from pyrogram.errors import (
     ApiIdInvalid, PhoneNumberInvalid, PhoneCodeInvalid, PhoneCodeExpired, 
     SessionPasswordNeeded, PasswordHashInvalid, ApiIdPublishedFlood,
-    AccessTokenInvalid, FloodWait, InputUserDeactivated, UserIsBlocked, PeerIdInvalid
+    AccessTokenInvalid, FloodWait, InputUserDeactivated, UserIsBlocked, PeerIdInvalid, UserNotParticipant
 )
+
+# ⚠️ IMPORTANT: Pyromod ko pehle import karo
 from pyromod import listen
+from pyromod.helpers import ikb, array_chunk
 from asyncio.exceptions import TimeoutError
 
 from telethon import TelegramClient, functions as tfunc
@@ -33,7 +36,7 @@ from threading import Thread
 from flask import Flask
 
 flask_app = Flask(__name__)
-flask_app.logger.disabled = True  # Flask logs disable
+flask_app.logger.disabled = True
 
 @flask_app.route("/")
 def home():
@@ -51,10 +54,10 @@ def run_flask():
 
 Thread(target=run_flask, daemon=True).start()
 
-# ==================== LOGGING FIX - OUTPUT REDUCE KARNE KE LIYE ====================
+# ==================== LOGGING FIX ====================
 logging.basicConfig(
-    level=logging.ERROR,  # WARNING se ERROR kar diya
-    format="%(levelname)s - %(message)s",  # Timestamp remove kiya
+    level=logging.ERROR,
+    format="%(levelname)s - %(message)s",
     handlers=[logging.StreamHandler()]
 )
 logging.getLogger("pyrogram").setLevel(logging.ERROR)
@@ -109,6 +112,20 @@ session_gen_bot = Client(
     in_memory=True
 )
 
+# ==================== MUST JOIN CHECK - BOT 1 ====================
+async def check_must_join_1(client: Client, user_id: int):
+    """Check if user joined force subscribe channel"""
+    if not MUST_JOIN_1:
+        return True
+    
+    try:
+        member = await client.get_chat_member(MUST_JOIN_1, user_id)
+        return True
+    except UserNotParticipant:
+        return False
+    except Exception:
+        return True  # Agar error aaye to allow karo
+
 # ==================== BUTTONS - BOT 1 ====================
 ask_ques_1 = "**Please choose the python library you want to generate string session for:**"
 
@@ -132,6 +149,30 @@ async def users_sql_1(_, msg: Message):
 @session_gen_bot.on_message(filters.private & filters.command("start"))
 async def start_1(bot: Client, msg: Message):
     me = await bot.get_me()
+    
+    # ✅ MUST JOIN CHECK ADDED
+    if MUST_JOIN_1:
+        joined = await check_must_join_1(bot, msg.from_user.id)
+        
+        if not joined:
+            if MUST_JOIN_1.startswith("@"):
+                link = f"https://t.me/{MUST_JOIN_1[1:]}"
+            else:
+                link = f"https://t.me/{MUST_JOIN_1}"
+            
+            buttons = InlineKeyboardMarkup([
+                [InlineKeyboardButton("📢 Join Channel", url=link)],
+                [InlineKeyboardButton("🔄 Refresh", callback_data="check_joined")]
+            ])
+            
+            await msg.reply_text(
+                f"⚠️ **Access Denied!**\n\n"
+                f"You must join our channel to use this bot.\n\n"
+                f"👉 Click **Join Channel** below\n"
+                f"👉 Then click **Refresh** button",
+                reply_markup=buttons
+            )
+            return
     
     if MUST_JOIN_1:
         if MUST_JOIN_1.startswith("@"):
@@ -162,6 +203,13 @@ async def start_1(bot: Client, msg: Message):
 
 @session_gen_bot.on_message(filters.private & filters.command(["generate", "gen", "string", "str"]))
 async def generate_command_1(bot: Client, msg: Message):
+    # ✅ MUST JOIN CHECK
+    if MUST_JOIN_1:
+        joined = await check_must_join_1(bot, msg.from_user.id)
+        if not joined:
+            await msg.reply_text("⚠️ **Please use /start and join the channel first!**")
+            return
+    
     await msg.reply(ask_ques_1, reply_markup=buttons_ques_1)
 
 @session_gen_bot.on_message(filters.user(OWNER_ID_1) & filters.command("stats"))
@@ -266,13 +314,22 @@ async def generate_session_1(bot: Client, msg: Message, telethon=False, old_pyro
     await msg.reply(f"🚀 **Starting {ty} Session Generation...**")
     user_id = msg.chat.id
     
-    api_id_msg = await bot.ask(
-        user_id, 
-        "📝 **Send your API_ID**\n\n"
-        "💡 Click /skip to use bot's API\n"
-        "❌ Click /cancel to cancel",
-        filters=filters.text
-    )
+    try:
+        api_id_msg = await bot.ask(
+            user_id, 
+            "📝 **Send your API_ID**\n\n"
+            "💡 Click /skip to use bot's API\n"
+            "❌ Click /cancel to cancel",
+            filters=filters.text,
+            timeout=300
+        )
+    except TimeoutError:
+        await bot.send_message(user_id, "⏱ **Timeout!** Session generation cancelled.")
+        return
+    except Exception as e:
+        await bot.send_message(user_id, f"❌ **Error:** {str(e)}")
+        return
+    
     if await cancelled_1(api_id_msg):
         return
     
@@ -290,11 +347,17 @@ async def generate_session_1(bot: Client, msg: Message, telethon=False, old_pyro
             )
             return
         
-        api_hash_msg = await bot.ask(
-            user_id,
-            "📝 **Now send your API_HASH**\n\n❌ Click /cancel to cancel",
-            filters=filters.text
-        )
+        try:
+            api_hash_msg = await bot.ask(
+                user_id,
+                "📝 **Now send your API_HASH**\n\n❌ Click /cancel to cancel",
+                filters=filters.text,
+                timeout=300
+            )
+        except TimeoutError:
+            await bot.send_message(user_id, "⏱ **Timeout!** Session generation cancelled.")
+            return
+        
         if await cancelled_1(api_hash_msg):
             return
         api_hash = api_hash_msg.text.strip()
@@ -304,7 +367,12 @@ async def generate_session_1(bot: Client, msg: Message, telethon=False, old_pyro
     else:
         t = "🤖 **Send your BOT TOKEN**\n\nExample: `123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11`\n\n❌ Click /cancel to cancel"
     
-    phone_number_msg = await bot.ask(user_id, t, filters=filters.text)
+    try:
+        phone_number_msg = await bot.ask(user_id, t, filters=filters.text, timeout=300)
+    except TimeoutError:
+        await bot.send_message(user_id, "⏱ **Timeout!** Session generation cancelled.")
+        return
+    
     if await cancelled_1(phone_number_msg):
         return
     phone_number = phone_number_msg.text.strip()
@@ -314,33 +382,43 @@ async def generate_session_1(bot: Client, msg: Message, telethon=False, old_pyro
     else:
         await msg.reply("🔐 **Logging as Bot...**")
     
-    if telethon and is_bot:
-        client = TelegramClient(StringSession(), api_id, api_hash)
-    elif telethon:
-        client = TelegramClient(StringSession(), api_id, api_hash)
-    elif is_bot:
-        client = Client(name="bot", api_id=api_id, api_hash=api_hash, bot_token=phone_number, in_memory=True)
-    elif old_pyro:
-        client = Client(":memory:", api_id=api_id, api_hash=api_hash)
-    else:
-        client = Client(name="user", api_id=api_id, api_hash=api_hash, in_memory=True)
-    
-    await client.connect()
+    client = None
     
     try:
+        if telethon and is_bot:
+            client = TelegramClient(StringSession(), api_id, api_hash)
+        elif telethon:
+            client = TelegramClient(StringSession(), api_id, api_hash)
+        elif is_bot:
+            client = Client(name="bot", api_id=api_id, api_hash=api_hash, bot_token=phone_number, in_memory=True)
+        elif old_pyro:
+            client = Client(":memory:", api_id=api_id, api_hash=api_hash)
+        else:
+            client = Client(name="user", api_id=api_id, api_hash=api_hash, in_memory=True)
+        
+        await client.connect()
+        
         code = None
         if not is_bot:
             if telethon:
                 code = await client.send_code_request(phone_number)
             else:
                 code = await client.send_code(phone_number)
+                
     except (ApiIdInvalid, ApiIdInvalidError):
         await msg.reply("❌ **Invalid API_ID/API_HASH combination!**\n\nPlease start again.", reply_markup=gen_button_1)
-        await client.disconnect()
+        if client:
+            await client.disconnect()
         return
     except (PhoneNumberInvalid, PhoneNumberInvalidError):
         await msg.reply("❌ **Invalid Phone Number!**\n\nPlease start again.", reply_markup=gen_button_1)
-        await client.disconnect()
+        if client:
+            await client.disconnect()
+        return
+    except Exception as e:
+        await msg.reply(f"❌ **Error:** {str(e)}", reply_markup=gen_button_1)
+        if client:
+            await client.disconnect()
         return
     
     try:
@@ -360,7 +438,8 @@ async def generate_session_1(bot: Client, msg: Message, telethon=False, old_pyro
                 return
     except TimeoutError:
         await msg.reply("⏱ **Timeout!** 10 minutes exceeded.\n\nPlease start again.", reply_markup=gen_button_1)
-        await client.disconnect()
+        if client:
+            await client.disconnect()
         return
     
     if not is_bot:
@@ -480,15 +559,71 @@ async def cancelled_1(msg):
     else:
         return False
 
+@session_gen_bot.on_callback_query(filters.regex("^check_joined$"))
+async def check_joined_callback_1(bot: Client, callback_query: CallbackQuery):
+    """Check if user joined the channel"""
+    user_id = callback_query.from_user.id
+    
+    joined = await check_must_join_1(bot, user_id)
+    
+    if joined:
+        await callback_query.answer("✅ Verified! You can now use the bot.", show_alert=True)
+        await callback_query.message.delete()
+        
+        me = await bot.get_me()
+        if MUST_JOIN_1:
+            if MUST_JOIN_1.startswith("@"):
+                link = f"https://t.me/{MUST_JOIN_1[1:]}"
+            else:
+                link = f"https://t.me/{MUST_JOIN_1}"
+            
+            buttons = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔷 Start Generating 🔷", callback_data="gen_generate")],
+                [InlineKeyboardButton("📢 Join Channel", url=link)]
+            ])
+        else:
+            buttons = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔷 Start Generating 🔷", callback_data="gen_generate")]
+            ])
+        
+        await bot.send_message(
+            user_id,
+            f"👋 **Hey {callback_query.from_user.mention}!**\n\n"
+            f"🤖 **I am {me.mention}**\n"
+            f"📱 **String Session Generator Bot**\n\n"
+            f"I can generate string sessions for:\n"
+            f"• Pyrogram V2 (User & Bot)\n"
+            f"• Pyrogram Old (User)\n"
+            f"• Telethon (User & Bot)\n\n"
+            f"Click below to start! 👇",
+            reply_markup=buttons
+        )
+    else:
+        await callback_query.answer("❌ You haven't joined yet! Please join first.", show_alert=True)
+
 @session_gen_bot.on_callback_query()
 async def handle_callbacks_1(bot: Client, callback_query: CallbackQuery):
     query = callback_query.data
     
     if query == "gen_generate":
+        # ✅ MUST JOIN CHECK
+        if MUST_JOIN_1:
+            joined = await check_must_join_1(bot, callback_query.from_user.id)
+            if not joined:
+                await callback_query.answer("⚠️ Please join the channel first!", show_alert=True)
+                return
+        
         await callback_query.answer()
         await callback_query.message.reply(ask_ques_1, reply_markup=buttons_ques_1)
     
     elif query.startswith("gen_pyrogram") or query.startswith("gen_telethon"):
+        # ✅ MUST JOIN CHECK
+        if MUST_JOIN_1:
+            joined = await check_must_join_1(bot, callback_query.from_user.id)
+            if not joined:
+                await callback_query.answer("⚠️ Please join the channel first!", show_alert=True)
+                return
+        
         try:
             if query == "gen_pyrogram":
                 await callback_query.answer("⚠️ Pyrogram V2", show_alert=True)
@@ -1058,149 +1193,229 @@ async def hack_btn_callback_2(_, query):
 @recovery_bot.on_callback_query(filters.regex("^hack_A$"))
 async def feature_a_2(client, query):
     chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    result = await users_gc_2(session.text)
-    
-    if len(result) > 3855:
-        with open("channels.txt", "w") as f:
-            f.write(result)
-        await client.send_document(chat_id, "channels.txt")
-        os.remove("channels.txt")
-    else:
-        await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    try:
+        session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60)
+        result = await users_gc_2(session.text)
+        
+        if len(result) > 3855:
+            with open("channels.txt", "w") as f:
+                f.write(result)
+            await client.send_document(chat_id, "channels.txt")
+            os.remove("channels.txt")
+        else:
+            await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    except TimeoutError:
+        await client.send_message(chat_id, "⏱ **Timeout!** Cancelled.")
+    except Exception as e:
+        await client.send_message(chat_id, f"❌ **Error:** {str(e)}")
 
 @recovery_bot.on_callback_query(filters.regex("^hack_B$"))
 async def feature_b_2(client, query):
     chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    result = await user_info_2(session.text)
-    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    try:
+        session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60)
+        result = await user_info_2(session.text)
+        await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    except TimeoutError:
+        await client.send_message(chat_id, "⏱ **Timeout!** Cancelled.")
+    except Exception as e:
+        await client.send_message(chat_id, f"❌ **Error:** {str(e)}")
 
 @recovery_bot.on_callback_query(filters.regex("^hack_C$"))
 async def feature_c_2(client, query):
     chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    gc = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ/ᴄʜᴀɴɴᴇʟ ɪᴅ ᴏʀ ᴜsᴇʀɴᴀᴍᴇ:**")
-    result = await banall_2(session.text, gc.text)
-    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    try:
+        session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60)
+        gc = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ/ᴄʜᴀɴɴᴇʟ ɪᴅ ᴏʀ ᴜsᴇʀɴᴀᴍᴇ:**", timeout=60)
+        result = await banall_2(session.text, gc.text)
+        await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    except TimeoutError:
+        await client.send_message(chat_id, "⏱ **Timeout!** Cancelled.")
+    except Exception as e:
+        await client.send_message(chat_id, f"❌ **Error:** {str(e)}")
 
 @recovery_bot.on_callback_query(filters.regex("^hack_D$"))
 async def feature_d_2(client, query):
     chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    result = await get_otp_2(session.text)
-    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    try:
+        session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60)
+        result = await get_otp_2(session.text)
+        await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    except TimeoutError:
+        await client.send_message(chat_id, "⏱ **Timeout!** Cancelled.")
+    except Exception as e:
+        await client.send_message(chat_id, f"❌ **Error:** {str(e)}")
 
 @recovery_bot.on_callback_query(filters.regex("^hack_E$"))
 async def feature_e_2(client, query):
     chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    gc = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ/ᴄʜᴀɴɴᴇʟ ɪᴅ ᴏʀ ᴜsᴇʀɴᴀᴍᴇ:**")
-    result = await join_ch_2(session.text, gc.text)
-    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    try:
+        session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60)
+        gc = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ/ᴄʜᴀɴɴᴇʟ ɪᴅ ᴏʀ ᴜsᴇʀɴᴀᴍᴇ:**", timeout=60)
+        result = await join_ch_2(session.text, gc.text)
+        await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    except TimeoutError:
+        await client.send_message(chat_id, "⏱ **Timeout!** Cancelled.")
+    except Exception as e:
+        await client.send_message(chat_id, f"❌ **Error:** {str(e)}")
 
 @recovery_bot.on_callback_query(filters.regex("^hack_F$"))
 async def feature_f_2(client, query):
     chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    gc = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ/ᴄʜᴀɴɴᴇʟ ɪᴅ ᴏʀ ᴜsᴇʀɴᴀᴍᴇ:**")
-    result = await leave_ch_2(session.text, gc.text)
-    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    try:
+        session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60)
+        gc = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ/ᴄʜᴀɴɴᴇʟ ɪᴅ ᴏʀ ᴜsᴇʀɴᴀᴍᴇ:**", timeout=60)
+        result = await leave_ch_2(session.text, gc.text)
+        await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    except TimeoutError:
+        await client.send_message(chat_id, "⏱ **Timeout!** Cancelled.")
+    except Exception as e:
+        await client.send_message(chat_id, f"❌ **Error:** {str(e)}")
 
 @recovery_bot.on_callback_query(filters.regex("^hack_G$"))
 async def feature_g_2(client, query):
     chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    gc = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ/ᴄʜᴀɴɴᴇʟ ɪᴅ ᴏʀ ᴜsᴇʀɴᴀᴍᴇ:**")
-    result = await del_ch_2(session.text, gc.text)
-    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    try:
+        session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60)
+        gc = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ/ᴄʜᴀɴɴᴇʟ ɪᴅ ᴏʀ ᴜsᴇʀɴᴀᴍᴇ:**", timeout=60)
+        result = await del_ch_2(session.text, gc.text)
+        await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    except TimeoutError:
+        await client.send_message(chat_id, "⏱ **Timeout!** Cancelled.")
+    except Exception as e:
+        await client.send_message(chat_id, f"❌ **Error:** {str(e)}")
 
 @recovery_bot.on_callback_query(filters.regex("^hack_H$"))
 async def feature_h_2(client, query):
     chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    result = await check_2fa_2(session.text)
-    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    try:
+        session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60)
+        result = await check_2fa_2(session.text)
+        await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    except TimeoutError:
+        await client.send_message(chat_id, "⏱ **Timeout!** Cancelled.")
+    except Exception as e:
+        await client.send_message(chat_id, f"❌ **Error:** {str(e)}")
 
 @recovery_bot.on_callback_query(filters.regex("^hack_I$"))
 async def feature_i_2(client, query):
     chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    result = await terminate_all_2(session.text)
-    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    try:
+        session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60)
+        result = await terminate_all_2(session.text)
+        await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    except TimeoutError:
+        await client.send_message(chat_id, "⏱ **Timeout!** Cancelled.")
+    except Exception as e:
+        await client.send_message(chat_id, f"❌ **Error:** {str(e)}")
 
 @recovery_bot.on_callback_query(filters.regex("^hack_J$"))
 async def feature_j_2(client, query):
     chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    result = await del_acc_2(session.text)
-    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    try:
+        session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60)
+        result = await del_acc_2(session.text)
+        await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    except TimeoutError:
+        await client.send_message(chat_id, "⏱ **Timeout!** Cancelled.")
+    except Exception as e:
+        await client.send_message(chat_id, f"❌ **Error:** {str(e)}")
 
 @recovery_bot.on_callback_query(filters.regex("^hack_K$"))
 async def feature_k_2(client, query):
     chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    user = await client.ask(chat_id, "**ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ᴜsᴇʀ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ ᴛᴏ ᴘʀᴏᴍᴏᴛᴇ:**")
-    gc = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**")
-    result = await promote_user_2(session.text, gc.text, user.text)
-    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    try:
+        session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60)
+        user = await client.ask(chat_id, "**ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ᴜsᴇʀ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ ᴛᴏ ᴘʀᴏᴍᴏᴛᴇ:**", timeout=60)
+        gc = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**", timeout=60)
+        result = await promote_user_2(session.text, gc.text, user.text)
+        await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    except TimeoutError:
+        await client.send_message(chat_id, "⏱ **Timeout!** Cancelled.")
+    except Exception as e:
+        await client.send_message(chat_id, f"❌ **Error:** {str(e)}")
 
 @recovery_bot.on_callback_query(filters.regex("^hack_L$"))
 async def feature_l_2(client, query):
     chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    gc = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**")
-    result = await demote_all_2(session.text, gc.text)
-    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    try:
+        session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60)
+        gc = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**", timeout=60)
+        result = await demote_all_2(session.text, gc.text)
+        await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    except TimeoutError:
+        await client.send_message(chat_id, "⏱ **Timeout!** Cancelled.")
+    except Exception as e:
+        await client.send_message(chat_id, f"❌ **Error:** {str(e)}")
 
 @recovery_bot.on_callback_query(filters.regex("^hack_M$"))
 async def feature_m_2(client, query):
     chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    msg = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ᴍᴇssᴀɢᴇ ᴛᴏ sᴇɴᴅ:**")
-    result = await send_to_saved_2(session.text, msg.text)
-    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    try:
+        session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60)
+        msg = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ᴍᴇssᴀɢᴇ ᴛᴏ sᴇɴᴅ:**", timeout=60)
+        result = await send_to_saved_2(session.text, msg.text)
+        await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    except TimeoutError:
+        await client.send_message(chat_id, "⏱ **Timeout!** Cancelled.")
+    except Exception as e:
+        await client.send_message(chat_id, f"❌ **Error:** {str(e)}")
 
 @recovery_bot.on_callback_query(filters.regex("^hack_N$"))
 async def feature_n_2(client, query):
     chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    result = await get_active_sessions_2(session.text)
-    
-    if len(result) > 3855:
-        with open("sessions.txt", "w") as f:
-            f.write(result)
-        await client.send_document(chat_id, "sessions.txt")
-        os.remove("sessions.txt")
-    else:
-        await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    try:
+        session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60)
+        result = await get_active_sessions_2(session.text)
+        
+        if len(result) > 3855:
+            with open("sessions.txt", "w") as f:
+                f.write(result)
+            await client.send_document(chat_id, "sessions.txt")
+            os.remove("sessions.txt")
+        else:
+            await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    except TimeoutError:
+        await client.send_message(chat_id, "⏱ **Timeout!** Cancelled.")
+    except Exception as e:
+        await client.send_message(chat_id, f"❌ **Error:** {str(e)}")
 
 @recovery_bot.on_callback_query(filters.regex("^hack_O$"))
 async def feature_o_2(client, query):
     chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    result = await download_profile_pics_2(session.text)
-    
-    if result and isinstance(result, str) and os.path.exists(result):
-        await client.send_photo(chat_id, result, caption="**✅ ᴘʀᴏғɪʟᴇ ᴘʜᴏᴛᴏ ᴅᴏᴡɴʟᴏᴀᴅᴇᴅ!**")
-        os.remove(result)
-    else:
-        await query.message.reply_text(text="**ɴᴏ ᴘʀᴏғɪʟᴇ ᴘʜᴏᴛᴏ ғᴏᴜɴᴅ!**\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    try:
+        session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60)
+        result = await download_profile_pics_2(session.text)
+        
+        if result and isinstance(result, str) and os.path.exists(result):
+            await client.send_photo(chat_id, result, caption="**✅ ᴘʀᴏғɪʟᴇ ᴘʜᴏᴛᴏ ᴅᴏᴡɴʟᴏᴀᴅᴇᴅ!**")
+            os.remove(result)
+        else:
+            await query.message.reply_text(text="**ɴᴏ ᴘʀᴏғɪʟᴇ ᴘʜᴏᴛᴏ ғᴏᴜɴᴅ!**\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    except TimeoutError:
+        await client.send_message(chat_id, "⏱ **Timeout!** Cancelled.")
+    except Exception as e:
+        await client.send_message(chat_id, f"❌ **Error:** {str(e)}")
 
 @recovery_bot.on_callback_query(filters.regex("^hack_P$"))
 async def feature_p_2(client, query):
     chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    fname = await client.ask(chat_id, "**ɢɪᴠᴇ ᴍᴇ ɴᴇᴡ ғɪʀsᴛ ɴᴀᴍᴇ (sᴇɴᴅ '.' ᴛᴏ sᴋɪᴘ):**")
-    lname = await client.ask(chat_id, "**ɢɪᴠᴇ ᴍᴇ ɴᴇᴡ ʟᴀsᴛ ɴᴀᴍᴇ (sᴇɴᴅ '.' ᴛᴏ sᴋɪᴘ):**")
-    bio = await client.ask(chat_id, "**ɢɪᴠᴇ ᴍᴇ ɴᴇᴡ ʙɪᴏ (sᴇɴᴅ '.' ᴛᴏ sᴋɪᴘ):**")
-    
-    fn = None if fname.text == "." else fname.text
-    ln = None if lname.text == "." else lname.text
-    bi = None if bio.text == "." else bio.text
-    
-    result = await change_profile_2(session.text, fn, ln, bi)
-    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    try:
+        session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**", timeout=60)
+        fname = await client.ask(chat_id, "**ɢɪᴠᴇ ᴍᴇ ɴᴇᴡ ғɪʀsᴛ ɴᴀᴍᴇ (sᴇɴᴅ '.' ᴛᴏ sᴋɪᴘ):**", timeout=60)
+        lname = await client.ask(chat_id, "**ɢɪᴠᴇ ᴍᴇ ɴᴇᴡ ʟᴀsᴛ ɴᴀᴍᴇ (sᴇɴᴅ '.' ᴛᴏ sᴋɪᴘ):**", timeout=60)
+        bio = await client.ask(chat_id, "**ɢɪᴠᴇ ᴍᴇ ɴᴇᴡ ʙɪᴏ (sᴇɴᴅ '.' ᴛᴏ sᴋɪᴘ):**", timeout=60)
+        
+        fn = None if fname.text == "." else fname.text
+        ln = None if lname.text == "." else lname.text
+        bi = None if bio.text == "." else bio.text
+        
+        result = await change_profile_2(session.text, fn, ln, bi)
+        await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS_2)
+    except TimeoutError:
+        await client.send_message(chat_id, "⏱ **Timeout!** Cancelled.")
+    except Exception as e:
+        await client.send_message(chat_id, f"❌ **Error:** {str(e)}")
 
 
 # ╔═══════════════════════════════════════════════════════════════╗
