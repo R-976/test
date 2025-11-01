@@ -43,7 +43,10 @@ HACK_BOT_TOKEN = os.getenv("HACK_BOT_TOKEN", "8351290809:AAGNTwNVF9i39PmgI-tGp_S
 
 OWNER_ID = int(os.getenv("OWNER_ID", "5368154755"))
 MUST_JOIN = os.getenv("MUST_JOIN", "RomeoBot_op")
-START_PIC = os.getenv("START_PIC", "https://telegra.ph//file/a9a90059ae47fa840b0b3.jpg")
+
+# SEPARATE PICTURES FOR BOTH BOTS
+SESSION_START_PIC = os.getenv("SESSION_START_PIC", "https://telegra.ph//file/a9a90059ae47fa840b0b3.jpg")
+HACK_START_PIC = os.getenv("HACK_START_PIC", "https://telegra.ph//file/a9a90059ae47fa840b0b3.jpg")
 
 # Owner Info
 OWNER_NAME = "𝕾🅡︎🅐︎🅙︎𝕾"
@@ -342,11 +345,11 @@ async def session_start(bot: Client, msg: Message):
     
     buttons = IKM([
         [IKB("🔷 Generate Session 🔷", callback_data="generate")],
-        [IKB("📚 Help", callback_data="help"), IKB("📢 Channel", url=f"https://t.me/{MUST_JOIN[1:] if MUST_JOIN.startswith('@') else MUST_JOIN}")]
+        [IKB("📚 Help", callback_data="session_help"), IKB("📢 Channel", url=f"https://t.me/{MUST_JOIN[1:] if MUST_JOIN.startswith('@') else MUST_JOIN}")]
     ])
     
     await msg.reply_photo(
-        photo=START_PIC,
+        photo=SESSION_START_PIC,
         caption=SESSION_START_TEXT.format(
             mention=msg.from_user.mention,
             bot_name=me.mention,
@@ -449,12 +452,12 @@ async def hack_start(bot: Client, msg: Message):
     me = await bot.get_me()
     
     buttons = IKM([
-        [IKB("🔥 Open Features 🔥", callback_data="hack_btn")],
-        [IKB("📚 Help", callback_data="help"), IKB("📢 Channel", url=f"https://t.me/{MUST_JOIN[1:] if MUST_JOIN.startswith('@') else MUST_JOIN}")]
+        [IKB("🔥 Open Features 🔥", callback_data="hack_menu")],
+        [IKB("📚 Help", callback_data="hack_help"), IKB("📢 Channel", url=f"https://t.me/{MUST_JOIN[1:] if MUST_JOIN.startswith('@') else MUST_JOIN}")]
     ])
     
     await msg.reply_photo(
-        photo=START_PIC,
+        photo=HACK_START_PIC,
         caption=HACK_START_TEXT.format(
             mention=msg.from_user.mention,
             bot_name=me.mention,
@@ -465,7 +468,7 @@ async def hack_start(bot: Client, msg: Message):
 
 # ==================== HACK BOT - HELP COMMAND ====================
 @hack_bot.on_message(filters.private & filters.command("help"))
-async def hack_help(bot: Client, msg: Message):
+async def hack_help_cmd(bot: Client, msg: Message):
     await msg.reply_text(
         HACK_HELP_TEXT.format(owner=OWNER_NAME),
         disable_web_page_preview=True
@@ -1045,7 +1048,7 @@ async def change_profile(session, fname=None, lname=None, bio=None):
 async def session_callbacks(bot: Client, query: CallbackQuery):
     data = query.data
     
-    if data == "help":
+    if data == "session_help":
         await query.answer()
         await query.message.reply_text(SESSION_HELP_TEXT.format(owner=OWNER_NAME))
     
@@ -1055,200 +1058,186 @@ async def session_callbacks(bot: Client, query: CallbackQuery):
     
     elif data in ["pyrogram", "pyrogram1", "telethon", "pyrogram_bot", "telethon_bot"]:
         try:
+            await query.answer()
             if data == "pyrogram":
-                await query.answer("⚠️ Pyrogram V2", show_alert=False)
                 await generate_session(bot, query.message)
             elif data == "pyrogram1":
-                await query.answer("📱 Pyrogram Old", show_alert=False)
                 await generate_session(bot, query.message, old_pyro=True)
             elif data == "pyrogram_bot":
-                await query.answer("🤖 Pyrogram Bot", show_alert=False)
                 await generate_session(bot, query.message, is_bot=True)
             elif data == "telethon_bot":
-                await query.answer("🤖 Telethon Bot", show_alert=False)
                 await generate_session(bot, query.message, telethon=True, is_bot=True)
             elif data == "telethon":
-                await query.answer("📱 Telethon", show_alert=False)
                 await generate_session(bot, query.message, telethon=True)
         except Exception as e:
+            logger.error(f"Session callback error: {e}")
             await query.message.reply(f"❌ **Error:** `{str(e)}`")
 
 # ==================== HACK BOT CALLBACKS ====================
 @hack_bot.on_callback_query()
 async def hack_callbacks(bot: Client, query: CallbackQuery):
     data = query.data
+    chat_id = query.message.chat.id
     
-    if data == "help":
-        await query.answer()
-        await query.message.reply_text(HACK_HELP_TEXT.format(owner=OWNER_NAME))
+    try:
+        if data == "hack_help":
+            await query.answer()
+            await query.message.reply_text(HACK_HELP_TEXT.format(owner=OWNER_NAME))
+        
+        elif data == "hack_menu":
+            await query.answer()
+            await query.message.reply_text(HACK_FEATURES_TEXT.format(owner=OWNER_NAME), reply_markup=HACK_MODS)
+        
+        # Feature A
+        elif data == "A":
+            await query.answer("Feature A: Get Groups/Channels")
+            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
+            result = await users_gc(session.text)
+            
+            if len(result) > 3855:
+                with open("channels.txt", "w") as f:
+                    f.write(result)
+                await bot.send_document(chat_id, "channels.txt")
+                os.remove("channels.txt")
+            else:
+                await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+        
+        # Feature B
+        elif data == "B":
+            await query.answer("Feature B: Get User Info")
+            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
+            result = await user_info(session.text)
+            await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+        
+        # Feature C
+        elif data == "C":
+            await query.answer("Feature C: Ban All Members")
+            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
+            gc = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**")
+            result = await banall(session.text, gc.text)
+            await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+        
+        # Feature D
+        elif data == "D":
+            await query.answer("Feature D: Get OTP")
+            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
+            result = await get_otp(session.text)
+            await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+        
+        # Feature E
+        elif data == "E":
+            await query.answer("Feature E: Join Channel")
+            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
+            gc = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ/ᴄʜᴀɴɴᴇʟ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**")
+            result = await join_ch(session.text, gc.text)
+            await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+        
+        # Feature F
+        elif data == "F":
+            await query.answer("Feature F: Leave Channel")
+            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
+            gc = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ/ᴄʜᴀɴɴᴇʟ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**")
+            result = await leave_ch(session.text, gc.text)
+            await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+        
+        # Feature G
+        elif data == "G":
+            await query.answer("Feature G: Delete Channel")
+            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
+            gc = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ/ᴄʜᴀɴɴᴇʟ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**")
+            result = await del_ch(session.text, gc.text)
+            await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+        
+        # Feature H
+        elif data == "H":
+            await query.answer("Feature H: Check 2FA")
+            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
+            result = await check_2fa(session.text)
+            await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+        
+        # Feature I
+        elif data == "I":
+            await query.answer("Feature I: Terminate Sessions")
+            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
+            result = await terminate_all(session.text)
+            await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+        
+        # Feature J
+        elif data == "J":
+            await query.answer("Feature J: Delete Account")
+            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
+            result = await del_acc(session.text)
+            await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+        
+        # Feature K
+        elif data == "K":
+            await query.answer("Feature K: Promote User")
+            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
+            user = await bot.ask(chat_id, "**ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ᴜsᴇʀ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**")
+            gc = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**")
+            result = await promote_user(session.text, gc.text, user.text)
+            await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+        
+        # Feature L
+        elif data == "L":
+            await query.answer("Feature L: Demote All Admins")
+            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
+            gc = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**")
+            result = await demote_all(session.text, gc.text)
+            await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+        
+        # Feature M
+        elif data == "M":
+            await query.answer("Feature M: Send to Saved")
+            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
+            msg = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ᴍᴇssᴀɢᴇ:**")
+            result = await send_to_saved(session.text, msg.text)
+            await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+        
+        # Feature N
+        elif data == "N":
+            await query.answer("Feature N: Active Sessions")
+            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
+            result = await get_active_sessions(session.text)
+            
+            if len(result) > 3855:
+                with open("sessions.txt", "w") as f:
+                    f.write(result)
+                await bot.send_document(chat_id, "sessions.txt")
+                os.remove("sessions.txt")
+            else:
+                await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+        
+        # Feature O
+        elif data == "O":
+            await query.answer("Feature O: Download Profile Pic")
+            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
+            result = await download_profile_pics(session.text)
+            
+            if result and isinstance(result, str) and os.path.exists(result):
+                await bot.send_photo(chat_id, result, caption="**✅ ᴘʀᴏғɪʟᴇ ᴘʜᴏᴛᴏ!**")
+                os.remove(result)
+            else:
+                await query.message.reply_text(text="**ɴᴏ ᴘʀᴏғɪʟᴇ ᴘʜᴏᴛᴏ!**\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+        
+        # Feature P
+        elif data == "P":
+            await query.answer("Feature P: Change Profile")
+            session = await bot.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
+            fname = await bot.ask(chat_id, "**ɢɪᴠᴇ ғɪʀsᴛ ɴᴀᴍᴇ (sᴇɴᴅ '.' ᴛᴏ sᴋɪᴘ):**")
+            lname = await bot.ask(chat_id, "**ɢɪᴠᴇ ʟᴀsᴛ ɴᴀᴍᴇ (sᴇɴᴅ '.' ᴛᴏ sᴋɪᴘ):**")
+            bio = await bot.ask(chat_id, "**ɢɪᴠᴇ ʙɪᴏ (sᴇɴᴅ '.' ᴛᴏ sᴋɪᴘ):**")
+            
+            fn = None if fname.text == "." else fname.text
+            ln = None if lname.text == "." else lname.text
+            bi = None if bio.text == "." else bio.text
+            
+            result = await change_profile(session.text, fn, ln, bi)
+            await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
     
-    elif data == "hack_btn":
-        await query.answer()
-        await query.message.delete()
-        await query.message.reply_text(HACK_FEATURES_TEXT.format(owner=OWNER_NAME), reply_markup=HACK_MODS)
-
-# Feature A - Get Groups/Channels
-@hack_bot.on_callback_query(filters.regex("^A$"))
-async def feature_a(client, query):
-    chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    result = await users_gc(session.text)
-    
-    if len(result) > 3855:
-        with open("channels.txt", "w") as f:
-            f.write(result)
-        await client.send_document(chat_id, "channels.txt")
-        os.remove("channels.txt")
-    else:
-        await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
-
-# Feature B
-@hack_bot.on_callback_query(filters.regex("^B$"))
-async def feature_b(client, query):
-    chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    result = await user_info(session.text)
-    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
-
-# Feature C
-@hack_bot.on_callback_query(filters.regex("^C$"))
-async def feature_c(client, query):
-    chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    gc = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**")
-    result = await banall(session.text, gc.text)
-    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
-
-# Feature D
-@hack_bot.on_callback_query(filters.regex("^D$"))
-async def feature_d(client, query):
-    chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    result = await get_otp(session.text)
-    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
-
-# Feature E
-@hack_bot.on_callback_query(filters.regex("^E$"))
-async def feature_e(client, query):
-    chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    gc = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ/ᴄʜᴀɴɴᴇʟ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**")
-    result = await join_ch(session.text, gc.text)
-    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
-
-# Feature F
-@hack_bot.on_callback_query(filters.regex("^F$"))
-async def feature_f(client, query):
-    chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    gc = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ/ᴄʜᴀɴɴᴇʟ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**")
-    result = await leave_ch(session.text, gc.text)
-    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
-
-# Feature G
-@hack_bot.on_callback_query(filters.regex("^G$"))
-async def feature_g(client, query):
-    chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    gc = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ/ᴄʜᴀɴɴᴇʟ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**")
-    result = await del_ch(session.text, gc.text)
-    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
-
-# Feature H
-@hack_bot.on_callback_query(filters.regex("^H$"))
-async def feature_h(client, query):
-    chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    result = await check_2fa(session.text)
-    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
-
-# Feature I
-@hack_bot.on_callback_query(filters.regex("^I$"))
-async def feature_i(client, query):
-    chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    result = await terminate_all(session.text)
-    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
-
-# Feature J
-@hack_bot.on_callback_query(filters.regex("^J$"))
-async def feature_j(client, query):
-    chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    result = await del_acc(session.text)
-    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
-
-# Feature K
-@hack_bot.on_callback_query(filters.regex("^K$"))
-async def feature_k(client, query):
-    chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    user = await client.ask(chat_id, "**ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ᴜsᴇʀ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**")
-    gc = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**")
-    result = await promote_user(session.text, gc.text, user.text)
-    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
-
-# Feature L
-@hack_bot.on_callback_query(filters.regex("^L$"))
-async def feature_l(client, query):
-    chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    gc = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ɢʀᴏᴜᴘ ɪᴅ/ᴜsᴇʀɴᴀᴍᴇ:**")
-    result = await demote_all(session.text, gc.text)
-    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
-
-# Feature M
-@hack_bot.on_callback_query(filters.regex("^M$"))
-async def feature_m(client, query):
-    chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    msg = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ ᴍᴇssᴀɢᴇ:**")
-    result = await send_to_saved(session.text, msg.text)
-    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
-
-# Feature N
-@hack_bot.on_callback_query(filters.regex("^N$"))
-async def feature_n(client, query):
-    chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    result = await get_active_sessions(session.text)
-    
-    if len(result) > 3855:
-        with open("sessions.txt", "w") as f:
-            f.write(result)
-        await client.send_document(chat_id, "sessions.txt")
-        os.remove("sessions.txt")
-    else:
-        await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
-
-# Feature O
-@hack_bot.on_callback_query(filters.regex("^O$"))
-async def feature_o(client, query):
-    chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    result = await download_profile_pics(session.text)
-    
-    if result and isinstance(result, str) and os.path.exists(result):
-        await client.send_photo(chat_id, result, caption="**✅ ᴘʀᴏғɪʟᴇ ᴘʜᴏᴛᴏ!**")
-        os.remove(result)
-    else:
-        await query.message.reply_text(text="**ɴᴏ ᴘʀᴏғɪʟᴇ ᴘʜᴏᴛᴏ!**\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
-
-# Feature P
-@hack_bot.on_callback_query(filters.regex("^P$"))
-async def feature_p(client, query):
-    chat_id = query.message.chat.id
-    session = await client.ask(chat_id, "**ɴᴏᴡ ɢɪᴠᴇ ᴍᴇ ᴛʜᴇ sᴛʀɪɴɢ sᴇssɪᴏɴ:**")
-    fname = await client.ask(chat_id, "**ɢɪᴠᴇ ғɪʀsᴛ ɴᴀᴍᴇ (sᴇɴᴅ '.' ᴛᴏ sᴋɪᴘ):**")
-    lname = await client.ask(chat_id, "**ɢɪᴠᴇ ʟᴀsᴛ ɴᴀᴍᴇ (sᴇɴᴅ '.' ᴛᴏ sᴋɪᴘ):**")
-    bio = await client.ask(chat_id, "**ɢɪᴠᴇ ʙɪᴏ (sᴇɴᴅ '.' ᴛᴏ sᴋɪᴘ):**")
-    
-    fn = None if fname.text == "." else fname.text
-    ln = None if lname.text == "." else lname.text
-    bi = None if bio.text == "." else bio.text
-    
-    result = await change_profile(session.text, fn, ln, bi)
-    await query.message.reply_text(text=result + "\n\n**ᴛʜᴀɴᴋs ғᴏʀ ᴜsɪɴɢ ᴍᴇ**", reply_markup=HACK_MODS)
+    except Exception as e:
+        logger.error(f"Hack callback error: {e}")
+        await query.answer(f"Error: {str(e)}", show_alert=True)
 
 # ==================== MAIN FUNCTION ====================
 async def main():
