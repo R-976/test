@@ -4,10 +4,6 @@ import time
 import logging
 import asyncio
 from os import getenv
-from threading import Thread
-
-from flask import Flask
-
 from pyrogram import Client, filters, idle, enums
 from pyrogram.raw import functions
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ChatPrivileges
@@ -32,17 +28,10 @@ from telethon.errors import (
     PhoneCodeExpiredError, SessionPasswordNeededError, PasswordHashInvalidError
 )
 
-# ==================== LOGGING FIX - OUTPUT REDUCE KARNE KE LIYE ====================
-logging.basicConfig(
-    level=logging.ERROR,  # WARNING se ERROR kar diya
-    format="%(levelname)s - %(message)s",  # Timestamp remove kiya
-    handlers=[logging.StreamHandler()]
-)
-logging.getLogger("pyrogram").setLevel(logging.ERROR)
-logging.getLogger("telethon").setLevel(logging.ERROR)
-logging.getLogger("werkzeug").setLevel(logging.ERROR)
-
 # ==================== FLASK SERVER (OPTIMIZED) ====================
+from threading import Thread
+from flask import Flask
+
 flask_app = Flask(__name__)
 flask_app.logger.disabled = True  # Flask logs disable
 
@@ -61,6 +50,16 @@ def run_flask():
     flask_app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False, threaded=True)
 
 Thread(target=run_flask, daemon=True).start()
+
+# ==================== LOGGING FIX - OUTPUT REDUCE KARNE KE LIYE ====================
+logging.basicConfig(
+    level=logging.ERROR,  # WARNING se ERROR kar diya
+    format="%(levelname)s - %(message)s",  # Timestamp remove kiya
+    handlers=[logging.StreamHandler()]
+)
+logging.getLogger("pyrogram").setLevel(logging.ERROR)
+logging.getLogger("telethon").setLevel(logging.ERROR)
+logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
 # ╔═══════════════════════════════════════════════════════════════╗
 # ║           BOT 1: SESSION GENERATOR BOT                        ║
