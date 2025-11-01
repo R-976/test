@@ -1,9 +1,9 @@
 import os
 import json
-import logging
 import asyncio
 from asyncio.exceptions import TimeoutError
 import time
+from pyromod import listen
 from pyrogram import Client, filters, enums, idle
 from pyrogram.raw import functions
 from pyrogram.types import Message, InlineKeyboardMarkup as IKM, InlineKeyboardButton as IKB, CallbackQuery, ChatPrivileges
@@ -12,9 +12,6 @@ from pyrogram.errors import (
     SessionPasswordNeeded, PasswordHashInvalid, ApiIdPublishedFlood,
     AccessTokenInvalid, FloodWait, InputUserDeactivated, UserIsBlocked, PeerIdInvalid
 )
-
-from pyromod import listen
-
 from telethon import TelegramClient, functions as tfunc
 from telethon.sessions import StringSession
 from telethon.errors import (
@@ -32,6 +29,7 @@ from telethon.tl.functions.auth import ResetAuthorizationsRequest
 
 from threading import Thread
 from flask import Flask
+import logging
 
 logging.basicConfig(level=logging.CRITICAL)
 logging.getLogger("werkzeug").setLevel(logging.CRITICAL)
