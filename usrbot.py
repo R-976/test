@@ -440,57 +440,6 @@ async def hang_command(_, message: Message):
         await client.send_message(message.chat.id, hang_text)
         await asyncio.sleep(0.3)
 
-# ============================== REPLY RAID COMMANDS ============================== #
-
-async def toggle_reply_raid(message: Message, raid_list: list, list_name: str, action: str):
-    """Helper to add/remove users from reply raid lists."""
-    user = await get_user(message, get_text(message))
-    if not user:
-        return await eor(message, "`❌ User nahi mila. ID/Username do ya reply karo.`")
-    
-    if user.id in SUDO_USERS or user.id in VERIFIED_USERS:
-        return await eor(message, f"`😒 {user.first_name} ke saath yeh nahi kar sakta.`")
-
-    if action == "add":
-        if user.id in raid_list:
-            return await eor(message, f"`😒 {user.first_name} pehle se hi {list_name} list me hai.`")
-        raid_list.append(user.id)
-        await eor(message, f"`✅ {user.first_name} ko {list_name} me add kar diya gaya hai.`")
-    else: # remove
-        if user.id not in raid_list:
-            return await eor(message, f"`🤷‍♂️ {user.first_name} {list_name} list me hai hi nahi.`")
-        raid_list.remove(user.id)
-        await eor(message, f"`✅ {user.first_name} ko {list_name} se hata diya gaya hai.`")
-
-@client.on_message(filters.command(["rr", "replyraid"], ".") & filters.me)
-async def add_reply_raid(_, message: Message):
-    await toggle_reply_raid(message, ACTIVATE_RLIST, "Reply Raid", "add")
-
-@client.on_message(filters.command(["drr", "dreplyraid"], ".") & filters.me)
-async def remove_reply_raid(_, message: Message):
-    await toggle_reply_raid(message, ACTIVATE_RLIST, "Reply Raid", "remove")
-
-@client.on_message(filters.command(["rlr", "replyloveraid"], ".") & filters.me)
-async def add_reply_love_raid(_, message: Message):
-    await toggle_reply_raid(message, ACTIVATE_LLIST, "Reply Love Raid", "add")
-
-@client.on_message(filters.command(["drlr", "dreplyloveraid"], ".") & filters.me)
-async def remove_reply_love_raid(_, message: Message):
-    await toggle_reply_raid(message, ACTIVATE_LLIST, "Reply Love Raid", "remove")
-
-@client.on_message(filters.incoming & ~filters.me & ~filters.service)
-async def watch_raids(_, message: Message):
-    if not message.from_user: return
-    user_id = message.from_user.id
-    
-    if user_id in ACTIVATE_RLIST:
-        await asyncio.sleep(0.3)
-        await message.reply_text(f"{message.from_user.mention} {random.choice(RAID)}")
-    
-    if user_id in ACTIVATE_LLIST:
-        await asyncio.sleep(0.3)
-        await message.reply_text(f"{message.from_user.mention} {random.choice(LOVE)}")
-
 # =============================== UTILITY COMMANDS =============================== #
 
 @client.on_message(filters.command("all", ".") & filters.me)
@@ -553,8 +502,8 @@ async def telegraph_command(_, message: Message):
             return await op.edit("`❌ Sticker convert nahi ho paya.`")
             
         try:
-            media_url = upload_file(file_path)[0]
-            await op.edit(f"**🔗 Link:** `https://telegra.ph{media_url}`")
+            media_urls = upload_file(file_path)
+            await op.edit(f"**🔗 Link:** `https://telegra.ph{media_urls[0]}`")
         except Exception as e:
             await op.edit(f"`❌ Error: {e}`")
         finally:
@@ -669,6 +618,56 @@ async def host_client_command(_, message: Message):
     except Exception as e:
         await op.edit(f"**❌ Error:** `{e}`\n\nPlease make sure your Session String is valid.")
 
+# ============================== REPLY RAID COMMANDS ============================== #
+
+async def toggle_reply_raid(message: Message, raid_list: list, list_name: str, action: str):
+    """Helper to add/remove users from reply raid lists."""
+    user = await get_user(message, get_text(message))
+    if not user:
+        return await eor(message, "`❌ User nahi mila. ID/Username do ya reply karo.`")
+    
+    if user.id in SUDO_USERS or user.id in VERIFIED_USERS:
+        return await eor(message, f"`😒 {user.first_name} ke saath yeh nahi kar sakta.`")
+
+    if action == "add":
+        if user.id in raid_list:
+            return await eor(message, f"`😒 {user.first_name} pehle se hi {list_name} list me hai.`")
+        raid_list.append(user.id)
+        await eor(message, f"`✅ {user.first_name} ko {list_name} me add kar diya gaya hai.`")
+    else: # remove
+        if user.id not in raid_list:
+            return await eor(message, f"`🤷‍♂️ {user.first_name} {list_name} list me hai hi nahi.`")
+        raid_list.remove(user.id)
+        await eor(message, f"`✅ {user.first_name} ko {list_name} se hata diya gaya hai.`")
+
+@client.on_message(filters.command(["rr", "replyraid"], ".") & filters.me)
+async def add_reply_raid(_, message: Message):
+    await toggle_reply_raid(message, ACTIVATE_RLIST, "Reply Raid", "add")
+
+@client.on_message(filters.command(["drr", "dreplyraid"], ".") & filters.me)
+async def remove_reply_raid(_, message: Message):
+    await toggle_reply_raid(message, ACTIVATE_RLIST, "Reply Raid", "remove")
+
+@client.on_message(filters.command(["rlr", "replyloveraid"], ".") & filters.me)
+async def add_reply_love_raid(_, message: Message):
+    await toggle_reply_raid(message, ACTIVATE_LLIST, "Reply Love Raid", "add")
+
+@client.on_message(filters.command(["drlr", "dreplyloveraid"], ".") & filters.me)
+async def remove_reply_love_raid(_, message: Message):
+    await toggle_reply_raid(message, ACTIVATE_LLIST, "Reply Love Raid", "remove")
+
+@client.on_message(filters.incoming & ~filters.me & ~filters.service)
+async def watch_raids(_, message: Message):
+    if not message.from_user: return
+    user_id = message.from_user.id
+    
+    if user_id in ACTIVATE_RLIST:
+        await asyncio.sleep(0.3)
+        await message.reply_text(f"{message.from_user.mention} {random.choice(RAID)}")
+    
+    if user_id in ACTIVATE_LLIST:
+        await asyncio.sleep(0.3)
+        await message.reply_text(f"{message.from_user.mention} {random.choice(LOVE)}")
 
 # ================================== MAIN ================================== #
 
