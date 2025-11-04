@@ -146,7 +146,6 @@ Sabhi commands ke aage `.` (dot) lagana zaroori hai.
 `help`: Yeh help message dekhne ke liye.
 `all [message]`: Group ke sabhi members ko tag karne ke liye.
 `cancel`: `all` command ko rokne ke liye.
-`tg [reply to media/text]`: Media ya text ko telegra.ph link me convert karne ke liye.
 
 **🤡 Fun & Spam Commands**
 `raid <count> <user/reply>`: Kisi user par gaaliyon ki barsaat karne ke liye.
