@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 import os
 import sys
 import json
@@ -15,8 +13,6 @@ from pyrogram import Client, filters, idle, enums, __version__
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
 from pyrogram.errors import FloodWait
 
-from telegraph import Telegraph, exceptions
-from telegraph.utils import upload_file
 from PIL import Image
 
 # ================================== CONFIG ================================== #
@@ -81,9 +77,6 @@ client = Client(
     session_string=STRING_SESSION,
     in_memory=True
 )
-
-telegraph = Telegraph()
-telegraph.create_account(short_name="UserBot")
 
 # ================================== HELPERS ================================== #
 
@@ -484,40 +477,6 @@ async def cancel_spam_command(_, message: Message):
     spam_chats.remove(message.chat.id)
     await eor(message, "`✅ Tagall process rok diya gaya hai.`")
 
-@client.on_message(filters.command(["tg", "telegraph", "tm"], ".") & filters.me)
-async def telegraph_command(_, message: Message):
-    reply = message.reply_to_message
-    if not reply:
-        return await eor(message, "`🖼️ Media ya text ko reply karke command do.`")
-    
-    op = await eor(message, "`🔄 Processing...`")
-    
-    if reply.media:
-        if reply.sticker:
-            file_path = await convert_to_image(reply, client)
-        else:
-            file_path = await reply.download()
-        
-        if not file_path:
-            return await op.edit("`❌ Sticker convert nahi ho paya.`")
-            
-        try:
-            media_urls = upload_file(file_path)
-            await op.edit(f"**🔗 Link:** `https://telegra.ph{media_urls[0]}`")
-        except Exception as e:
-            await op.edit(f"`❌ Error: {e}`")
-        finally:
-            if os.path.exists(file_path):
-                os.remove(file_path)
-                
-    elif reply.text:
-        page_title = client.me.first_name
-        page_text = reply.text.replace("\n", "<br>")
-        try:
-            response = telegraph.create_page(page_title, html_content=page_text)
-            await op.edit(f"**🔗 Link:** `https://telegra.ph/{response['path']}`")
-        except exceptions.TelegraphException as e:
-            await op.edit(f"`❌ Error: {e}`")
 
 # =============================== EMOJI ART (Kept as is due to complexity) =============================== #
 
