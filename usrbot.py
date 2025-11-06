@@ -15,6 +15,59 @@ from pyrogram.errors import FloodWait, UsernameNotOccupied, UsernameOccupied
 
 from PIL import Image
 
+# ==================== FLASK SERVER FOR RENDER ====================
+import os
+import time
+import logging
+from flask import Flask
+from threading import Thread
+
+logging.basicConfig(level=logging.CRITICAL)
+logging.getLogger("werkzeug").setLevel(logging.CRITICAL)
+logging.getLogger("pyrogram").setLevel(logging.CRITICAL)
+logging.getLogger("asyncio").setLevel(logging.CRITICAL)
+# Extra: keep Render logs tiny
+logging.getLogger("httpx").setLevel(logging.CRITICAL)
+logging.getLogger("urllib3").setLevel(logging.CRITICAL)
+
+logger = logging.getLogger(__name__)
+
+
+flask_app = Flask(__name__)
+flask_app.logger.disabled = True
+
+@flask_app.route("/")
+def home():
+    return "✅ Bot System is Running!"
+
+@flask_app.route("/health")
+def health():
+    return "OK", 200
+
+@flask_app.route("/healthz")
+def healthz():
+    return "", 204
+
+def run_flask():
+    """Flask server to keep Render happy"""
+    port = int(os.getenv("PORT", 8080))
+    print(f"🌐 Flask server starting on port {port}...")
+    import logging as flask_logging
+    log = flask_logging.getLogger('werkzeug')
+    log.setLevel(flask_logging.ERROR)
+    log.disabled = True
+    flask_app.run(
+        host="0.0.0.0",
+        port=port,
+        debug=False,
+        use_reloader=False,
+        threaded=True
+    )
+flask_thread = Thread(target=run_flask, daemon=True)
+flask_thread.start()
+time.sleep(2)
+print("✅ Flask server started successfully!")
+
 # ================================== CONFIG ================================== #
 
 API_ID = int(getenv("API_ID", "10796618"))
