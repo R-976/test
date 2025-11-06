@@ -74,13 +74,10 @@ LOVE = [
     "जब से तुम मिली हो, ज़िंदगी जन्नत बन गई है 🌹"
 ]
 
+
 RAID = [
-    "MADARCHOD TERI MAA KI CHUT",
-    "TERI BEHN KA BHOSDA",
-    "TERI MAA KA LUND",
-    "BAAP SE BAKCHODI KAREGA",
-    "TERI MAA KI CHUT ME GHUSED",
-    "RANDI KE PILLE"
+    "A", "B", "C",
+    "D", "E", "F"
 ]
 
 PORM = [
