@@ -11,7 +11,7 @@ from os import getenv
 
 from pyrogram import Client, filters, idle, enums, __version__
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
-from pyrogram.errors import FloodWait
+from pyrogram.errors import FloodWait, UsernameNotOccupied, UsernameOccupied
 
 from PIL import Image
 
@@ -38,6 +38,9 @@ ACTIVATE_LLIST = []  # Reply Love Raid
 
 # Temporary hosted clients dictionary
 HOSTED_CLIENTS = {}  # {user_id: client_instance}
+
+# Original profile data storage
+ORIGINAL_PROFILES = {}  # {user_id: {"first_name": "", "last_name": "", "bio": "", "username": "", "photos": []}}
 
 # Content Lists
 LOVE = [
@@ -122,6 +125,99 @@ async def _human_time_duration(seconds):
             parts.append(f'{amount} {unit}{"s" if amount > 1 else ""}')
     return ', '.join(parts)
 
+async def generate_unique_username(user_client: Client, base_username: str):
+    """Generate a unique username by appending last letter repeatedly."""
+    if not base_username:
+        return None
+    
+    # Remove @ if present
+    base_username = base_username.replace("@", "")
+    
+    # Get last letter
+    last_letter = base_username[-1]
+    new_username = base_username
+    
+    # Try up to 10 times to find a unique username
+    for i in range(1, 11):
+        new_username = base_username + (last_letter * i)
+        
+        # Check if username is available
+        try:
+            await user_client.update_username(new_username)
+            return new_username
+        except UsernameOccupied:
+            continue
+        except Exception:
+            break
+    
+    return None
+
+async def save_original_profile(user_client: Client, user_id: int):
+    """Save user's original profile data."""
+    try:
+        me = await user_client.get_me()
+        my_chat = await user_client.get_chat("me")
+        
+        # Get all profile photos
+        photos = []
+        async for photo in user_client.get_chat_photos("me"):
+            photos.append(photo.file_id)
+        
+        # Store original profile data
+        ORIGINAL_PROFILES[user_id] = {
+            "first_name": me.first_name or "",
+            "last_name": me.last_name or "",
+            "bio": my_chat.bio or "",
+            "username": me.username or "",
+            "photos": photos
+        }
+        
+        return True
+    except Exception as e:
+        print(f"Error saving profile: {e}")
+        return False
+
+async def restore_original_profile(user_client: Client, user_id: int):
+    """Restore user's original profile data."""
+    try:
+        if user_id not in ORIGINAL_PROFILES:
+            return False
+        
+        original_data = ORIGINAL_PROFILES[user_id]
+        
+        # Delete current photos
+        async for photo in user_client.get_chat_photos("me"):
+            await user_client.delete_profile_photos(photo.file_id)
+        
+        # Restore original photos
+        for photo_id in original_data.get("photos", []):
+            try:
+                await user_client.set_profile_photo(photo=photo_id)
+            except:
+                pass
+        
+        # Restore profile info
+        await user_client.update_profile(
+            first_name=original_data.get("first_name", ""),
+            last_name=original_data.get("last_name", ""),
+            bio=original_data.get("bio", "")
+        )
+        
+        # Restore username
+        if original_data.get("username"):
+            try:
+                await user_client.update_username(original_data.get("username"))
+            except:
+                pass
+        
+        # Clear saved data to free memory
+        del ORIGINAL_PROFILES[user_id]
+        
+        return True
+    except Exception as e:
+        print(f"Error restoring profile: {e}")
+        return False
+
 # ================================== HOSTER BOT COMMANDS ================================ #
 
 @app.on_message(filters.command("start", ["/", "!", "."]) & filters.private)
@@ -134,7 +230,7 @@ async def start_hoster_command(_, message: Message):
         "**Commands:**\n"
         "• `/host <SESSION_STRING>` - Apna userbot activate karo\n"
         "• `/stop` - Apna userbot deactivate karo\n"
-        "• `/status` - Check karo ki aapka userbot chal raha hai ya nahi\n\n"
+        "• `/status` - Check karo ka aapka userbot chal raha hai ya nahi\n\n"
         "**Owner:** @Romeo_RJ_143"
     )
     buttons = [
@@ -222,6 +318,11 @@ async def stop_client_command(_, message: Message):
     try:
         await HOSTED_CLIENTS[user_id].stop()
         del HOSTED_CLIENTS[user_id]
+        
+        # Clean up any saved profile data
+        if user_id in ORIGINAL_PROFILES:
+            del ORIGINAL_PROFILES[user_id]
+        
         await message.reply_text(
             "✅ **Aapka userbot successfully stop ho gaya!**\n"
             "Dubara activate karne ke liye `/host` command use karo."
@@ -250,7 +351,8 @@ async def status_command(_, message: Message):
             f"**👤 Account:** {me.first_name}\n"
             f"**🆔 ID:** `{me.id}`\n"
             f"**⏱️ Uptime:** `{uptime}`\n"
-            f"**📊 Total Hosted Users:** `{len(HOSTED_CLIENTS)}`"
+            f"**📊 Total Hosted Users:** `{len(HOSTED_CLIENTS)}`\n"
+            f"**🔄 Profile Cloned:** `{'Yes' if user_id in ORIGINAL_PROFILES else 'No'}`"
         )
     except Exception as e:
         await message.reply_text(f"❌ **Error:** `{e}`")
@@ -273,6 +375,7 @@ async def restart_command(_, message: Message):
             pass
     
     HOSTED_CLIENTS.clear()
+    ORIGINAL_PROFILES.clear()
     
     await op.edit(
         "✅ **Bot restarted successfully!**\n"
@@ -353,6 +456,123 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
             await message.delete()
         else:
             await client_eor(message, caption)
+    
+    # CLONE Command - Fixed with proper profile saving and username handling
+    @user_client.on_message(filters.command("clone", ".") & filters.me)
+    async def clone_cmd(_, message: Message):
+        text = get_text(message)
+        my_id = (await user_client.get_me()).id
+        
+        # Check if already cloned
+        if owner_id in ORIGINAL_PROFILES:
+            return await client_eor(message, 
+                "⚠️ **Already cloned someone's profile!**\n"
+                "Use `.revert` first to restore original profile."
+            )
+        
+        if message.reply_to_message:
+            user = message.reply_to_message.from_user
+        elif text:
+            try:
+                user = await user_client.get_users(text)
+            except:
+                return await client_eor(message, "`User not found!`")
+        else:
+            return await client_eor(message, "`Reply to user or give username/id!`")
+        
+        op = await client_eor(message, "`🔄 Cloning profile...`")
+        
+        try:
+            # Step 1: Save original profile
+            await op.edit("`📸 Saving your original profile...`")
+            saved = await save_original_profile(user_client, owner_id)
+            
+            if not saved:
+                return await op.edit("`❌ Failed to save original profile!`")
+            
+            # Step 2: Get target user's info
+            await op.edit("`🎯 Getting target user's profile...`")
+            target_chat = await user_client.get_chat(user.id)
+            
+            # Step 3: Delete current photos
+            await op.edit("`🗑️ Clearing current profile photos...`")
+            async for photo in user_client.get_chat_photos("me"):
+                await user_client.delete_profile_photos(photo.file_id)
+            
+            # Step 4: Set new photos (up to 3)
+            await op.edit("`📷 Setting new profile photos...`")
+            photo_count = 0
+            async for photo in user_client.get_chat_photos(user.id, limit=3):
+                try:
+                    # Download photo
+                    photo_path = await user_client.download_media(photo.file_id)
+                    await user_client.set_profile_photo(photo=photo_path)
+                    os.remove(photo_path)
+                    photo_count += 1
+                except:
+                    pass
+            
+            # Step 5: Update bio and name
+            await op.edit("`📝 Updating profile info...`")
+            await user_client.update_profile(
+                first_name=user.first_name or "User",
+                last_name=user.last_name or "",
+                bio=target_chat.bio[:70] if target_chat.bio else ""  # Bio has 70 char limit
+            )
+            
+            # Step 6: Try to update username (if target has username)
+            username_status = "Not Changed"
+            if user.username:
+                await op.edit("`🔤 Trying to set unique username...`")
+                new_username = await generate_unique_username(user_client, user.username)
+                if new_username:
+                    username_status = f"@{new_username}"
+            
+            await op.edit(
+                f"**✅ Successfully Cloned Profile!**\n\n"
+                f"**👤 Cloned:** {user.first_name}\n"
+                f"**🆔 User ID:** `{user.id}`\n"
+                f"**📷 Photos Cloned:** `{photo_count}`\n"
+                f"**📝 Username:** `{username_status}`\n\n"
+                f"**💡 Use** `.revert` **to restore original profile**"
+            )
+            
+        except Exception as e:
+            # If error occurs, try to restore original profile
+            if owner_id in ORIGINAL_PROFILES:
+                await restore_original_profile(user_client, owner_id)
+            await op.edit(f"`❌ Error: {e}`")
+    
+    # REVERT Command - Fixed with proper restoration
+    @user_client.on_message(filters.command("revert", ".") & filters.me)
+    async def revert_cmd(_, message: Message):
+        my_id = (await user_client.get_me()).id
+        
+        if owner_id not in ORIGINAL_PROFILES:
+            return await client_eor(message,
+                "⚠️ **No saved profile data found!**\n"
+                "You haven't cloned any profile yet."
+            )
+        
+        op = await client_eor(message, "`🔄 Reverting to original profile...`")
+        
+        try:
+            # Restore original profile
+            success = await restore_original_profile(user_client, owner_id)
+            
+            if success:
+                await op.edit(
+                    "**✅ Profile Successfully Reverted!**\n\n"
+                    "Your original profile has been restored.\n"
+                    "• Profile photos ✅\n"
+                    "• Name & Bio ✅\n"
+                    "• Username ✅"
+                )
+            else:
+                await op.edit("❌ **Failed to revert profile!**")
+                
+        except Exception as e:
+            await op.edit(f"`❌ Error while reverting: {e}`")
     
     # RAID Commands
     @user_client.on_message(filters.command(["raid", "r"], ".") & filters.me)
@@ -468,55 +688,6 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
         for _ in range(count):
             await user_client.send_message(message.chat.id, hang_text)
             await asyncio.sleep(0.5)
-    
-    # CLONE Command
-    @user_client.on_message(filters.command("clone", ".") & filters.me)
-    async def clone_cmd(_, message: Message):
-        text = get_text(message)
-        
-        if message.reply_to_message:
-            user = message.reply_to_message.from_user
-        elif text:
-            try:
-                user = await user_client.get_users(text)
-            except:
-                return await client_eor(message, "`User not found!`")
-        else:
-            return await client_eor(message, "`Reply to user or give username/id!`")
-            
-        op = await client_eor(message, "`Cloning profile...`")
-        
-        try:
-            # Get target user's info
-            target_chat = await user_client.get_chat(user.id)
-            
-            # Delete current photos
-            async for photo in user_client.get_chat_photos("me"):
-                await user_client.delete_profile_photos(photo.file_id)
-            
-            # Set new photos
-            async for photo in user_client.get_chat_photos(user.id, limit=3):
-                await user_client.set_profile_photo(photo=photo.file_id)
-            
-            # Update profile
-            await user_client.update_profile(
-                first_name=user.first_name or "User",
-                last_name=user.last_name or "",
-                bio=target_chat.bio or ""
-            )
-            
-            await op.edit(f"**✅ Successfully cloned {user.first_name}'s profile!**")
-            
-        except Exception as e:
-            await op.edit(f"`Error: {e}`")
-    
-    # REVERT Command
-    @user_client.on_message(filters.command("revert", ".") & filters.me)
-    async def revert_cmd(_, message: Message):
-        await client_eor(message, 
-            "`⚠️ Profile revert feature requires backup!`\n"
-            "Please manually update your profile."
-        )
     
     # TAG ALL Command
     @user_client.on_message(filters.command("all", ".") & filters.me)
