@@ -159,7 +159,7 @@ async def generate_unique_username(user_client: Client, base_username: str):
             break
             
         try:
-            await user_client.update_username(new_username)
+            await user_client.set_username(new_username)
             return new_username
         except UsernameOccupied:
             continue
@@ -167,7 +167,7 @@ async def generate_unique_username(user_client: Client, base_username: str):
             # Handle flood wait
             await asyncio.sleep(e.value)
             try:
-                await user_client.update_username(new_username)
+                await user_client.set_username(new_username)
                 return new_username
             except:
                 continue
@@ -228,7 +228,7 @@ async def restore_original_profile(user_client: Client, user_id: int):
         # Restore username
         if original_data.get("username"):
             try:
-                await user_client.update_username(original_data.get("username"))
+                await user_client.set_username(original_data.get("username"))
             except:
                 pass
         
