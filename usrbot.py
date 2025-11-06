@@ -881,6 +881,16 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
                 
         if members_text:
             await user_client.send_message(chat_id, f"{text}\n\n{members_text}")
+
+    # CANCEL Command for tag all
+    @user_client.on_message(filters.command("cancel", ".") & filters.me)
+    async def cancel_cmd(_, message: Message):
+        global spam_chats
+        if message.chat.id in spam_chats:
+            spam_chats.remove(message.chat.id)
+            await client_eor(message, "`✅ Tagging cancelled!`")
+        else:
+            await client_eor(message, "`❌ No active tagging in this chat!`")
     
     # REPLY RAID ACTIVATE - For Hosters
     @user_client.on_message(filters.command("rr", ".") & filters.me)
