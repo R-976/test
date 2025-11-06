@@ -4,6 +4,7 @@ import json
 import random
 import asyncio
 import re
+from io import BytesIO
 from time import time
 from datetime import datetime
 from platform import python_version
@@ -23,12 +24,10 @@ logging.basicConfig(level=logging.CRITICAL)
 logging.getLogger("werkzeug").setLevel(logging.CRITICAL)
 logging.getLogger("pyrogram").setLevel(logging.CRITICAL)
 logging.getLogger("asyncio").setLevel(logging.CRITICAL)
-# Extra: keep Render logs tiny
 logging.getLogger("httpx").setLevel(logging.CRITICAL)
 logging.getLogger("urllib3").setLevel(logging.CRITICAL)
 
 logger = logging.getLogger(__name__)
-
 
 flask_app = Flask(__name__)
 flask_app.logger.disabled = True
@@ -60,6 +59,7 @@ def run_flask():
         use_reloader=False,
         threaded=True
     )
+
 flask_thread = Thread(target=run_flask, daemon=True)
 flask_thread.start()
 time.sleep(2)
@@ -89,8 +89,8 @@ ACTIVATE_LLIST = {}  # {hoster_id: [user_ids]}  - Love Reply Raid per hoster
 # Temporary hosted clients dictionary
 HOSTED_CLIENTS = {}  # {user_id: client_instance}
 
-# Original profile data storage
-ORIGINAL_PROFILES = {}  # {user_id: {"first_name": "", "last_name": "", "bio": "", "username": "", "photos": []}}
+# Original profile data storage with binary photo data
+ORIGINAL_PROFILES = {}  # {user_id: {"first_name": "", "last_name": "", "bio": "", "username": "", "photos_data": [bytes]}}
 
 # Content Lists
 LOVE = [
@@ -98,11 +98,15 @@ LOVE = [
     "आप इतने क्यूट हो की अगर 𝑴𝑺𝑮 ना भी करना चाहू. तो भी हाथ खुद कीपैड पर चलने लगता है !",
     "मै तो सिर्फ तुम्हारे प्यार का नशा करता हु , एंड उसके हेंग ओवर के आगे कोई और नशे की जरुरत नहीं है !",
     "कुछ ऐसे हस्दे ज़िन्दगी मैं होते है🤔🤔, के इंसान तो बच जाता है मगर ज़िंदा नहीं रहता😂💓",
+    "तुम्हारी मुस्कान देख कर मेरा दिल पिघल जाता है 💖",
+    "जब से तुम मिली हो, ज़िंदगी जन्नत बन गई है 🌹",
 ]
+
 RAID = [
     "A", "B", "C",
     "D", "E", "F",
 ]
+
 PORM = [
     "https://telegra.ph/file/9bcc076fd81dfe3feb291.mp4",
     "https://telegra.ph/file/b7a1a42429a65f64e67af.mp4",
@@ -112,7 +116,7 @@ PORM = [
 
 # Restricted Groups
 GROUP = [-1001265778325, -1001625889213, -1001678976340]
-VERIFIED_USERS = [5368154755, 5353539036, 5392070730] # Devs, etc.
+VERIFIED_USERS = [5368154755, 5353539036, 5392070730]  # Devs, etc.
 
 # ============================ INITIALIZING CLIENTS ============================ #
 
@@ -138,29 +142,36 @@ client = Client(
 
 async def eor(message: Message, text: str, **kwargs):
     """Edit own message or reply to the user's message."""
-    if message.from_user.is_self:
-        return await message.edit_text(text, **kwargs)
-    return await message.reply_text(text, **kwargs)
+    try:
+        if message.from_user.is_self:
+            return await message.edit_text(text, **kwargs)
+        return await message.reply_text(text, **kwargs)
+    except Exception as e:
+        print(f"Error in eor: {e}")
+        return None
 
 def get_text(message: Message):
     """Extract text from a command message."""
-    text = message.text or ""
-    if " " in text:
-        return text.split(None, 1)[1]
-    return None
+    try:
+        text = message.text or ""
+        if " " in text:
+            return text.split(None, 1)[1]
+        return None
+    except:
+        return None
 
 async def get_user(message: Message, text: str, user_client: Client):
-    """Get user from a message."""
-    # If replying to a message
-    if message.reply_to_message and message.reply_to_message.from_user:
-        return message.reply_to_message.from_user
-    
-    # If no text provided
-    if not text:
-        return None
-    
-    # Try to get user from text (username or ID)
+    """Get user from a message with better error handling."""
     try:
+        # If replying to a message
+        if message.reply_to_message and message.reply_to_message.from_user:
+            return message.reply_to_message.from_user
+        
+        # If no text provided
+        if not text:
+            return None
+        
+        # Try to get user from text (username or ID)
         text = text.strip()
         
         # Remove @ if present
@@ -169,12 +180,22 @@ async def get_user(message: Message, text: str, user_client: Client):
         
         # Check if it's a user ID (numeric)
         if text.isdigit():
-            return await user_client.get_users(int(text))
+            try:
+                user = await user_client.get_users(int(text))
+                return user
+            except Exception as e:
+                print(f"Error getting user by ID: {e}")
+                return None
         else:
             # It's a username
-            return await user_client.get_users(text)
+            try:
+                user = await user_client.get_users(text)
+                return user
+            except Exception as e:
+                print(f"Error getting user by username: {e}")
+                return None
     except Exception as e:
-        print(f"Error getting user: {e}")
+        print(f"Error in get_user: {e}")
         return None
 
 async def _human_time_duration(seconds):
@@ -210,29 +231,39 @@ async def generate_unique_username(user_client: Client, base_username: str):
             return new_username
         except UsernameOccupied:
             continue
-        except Exception:
+        except Exception as e:
+            print(f"Error setting username: {e}")
             break
     
     return None
 
 async def save_original_profile(user_client: Client, user_id: int):
-    """Save user's original profile data."""
+    """Save user's original profile data with proper photo handling."""
     try:
         me = await user_client.get_me()
         my_chat = await user_client.get_chat("me")
         
-        # Get all profile photos
-        photos = []
-        async for photo in user_client.get_chat_photos("me"):
-            photos.append(photo.file_id)
+        # Get all profile photos and save as binary data
+        photos_data = []
+        async for photo in user_client.get_chat_photos("me", limit=3):
+            try:
+                # Download photo to memory as bytes
+                photo_bytes = await user_client.download_media(
+                    photo.file_id,
+                    in_memory=True
+                )
+                photos_data.append(bytes(photo_bytes.getvalue()))
+            except Exception as e:
+                print(f"Error saving photo: {e}")
+                continue
         
         # Store original profile data
         ORIGINAL_PROFILES[user_id] = {
             "first_name": me.first_name or "",
             "last_name": me.last_name or "",
-            "bio": my_chat.bio or "",
+            "bio": my_chat.bio or "",  # Bio character limit is 140
             "username": me.username or "",
-            "photos": photos
+            "photos_data": photos_data  # Store binary photo data
         }
         
         return True
@@ -241,7 +272,7 @@ async def save_original_profile(user_client: Client, user_id: int):
         return False
 
 async def restore_original_profile(user_client: Client, user_id: int):
-    """Restore user's original profile data."""
+    """Restore user's original profile data with proper photo handling."""
     try:
         if user_id not in ORIGINAL_PROFILES:
             return False
@@ -249,29 +280,39 @@ async def restore_original_profile(user_client: Client, user_id: int):
         original_data = ORIGINAL_PROFILES[user_id]
         
         # Delete current photos
-        async for photo in user_client.get_chat_photos("me"):
-            await user_client.delete_profile_photos(photo.file_id)
+        try:
+            async for photo in user_client.get_chat_photos("me"):
+                await user_client.delete_profile_photos(photo.file_id)
+        except Exception as e:
+            print(f"Error deleting photos: {e}")
         
-        # Restore original photos
-        for photo_id in original_data.get("photos", []):
+        # Restore original photos from binary data
+        for photo_bytes in original_data.get("photos_data", []):
             try:
-                await user_client.set_profile_photo(photo=photo_id)
-            except:
-                pass
+                # Create BytesIO object from bytes
+                photo_file = BytesIO(photo_bytes)
+                photo_file.name = "photo.jpg"
+                await user_client.set_profile_photo(photo=photo_file)
+            except Exception as e:
+                print(f"Error restoring photo: {e}")
+                continue
         
         # Restore profile info
-        await user_client.update_profile(
-            first_name=original_data.get("first_name", ""),
-            last_name=original_data.get("last_name", ""),
-            bio=original_data.get("bio", "")
-        )
+        try:
+            await user_client.update_profile(
+                first_name=original_data.get("first_name", ""),
+                last_name=original_data.get("last_name", ""),
+                bio=original_data.get("bio", "")[:140]  # Bio limit 140 characters
+            )
+        except Exception as e:
+            print(f"Error updating profile: {e}")
         
         # Restore username
         if original_data.get("username"):
             try:
                 await user_client.update_username(original_data.get("username"))
-            except:
-                pass
+            except Exception as e:
+                print(f"Error restoring username: {e}")
         
         # Clear saved data to free memory
         del ORIGINAL_PROFILES[user_id]
@@ -556,9 +597,13 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
     
     # Helper function specific to this client
     async def client_eor(message: Message, text: str, **kwargs):
-        if message.from_user.is_self:
-            return await message.edit_text(text, **kwargs)
-        return await message.reply_text(text, **kwargs)
+        try:
+            if message.from_user.is_self:
+                return await message.edit_text(text, **kwargs)
+            return await message.reply_text(text, **kwargs)
+        except Exception as e:
+            print(f"Error in client_eor: {e}")
+            return None
     
     # HELP Command
     @user_client.on_message(filters.command("help", ".") & filters.me)
@@ -572,7 +617,7 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
 • `.help` - Show this message
 
 **Spam Commands:**
-• `.spam [count] [text]`  or Reply to any media - spam text + media
+• `.spam [count]` - Reply to any media/text to spam
 • `.raid <count> <user>` - Raid a user
 • `.lraid <count> <user>` - Love raid
 • `.pornspam <count>` - Adult content spam
@@ -614,12 +659,15 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
         )
         
         if message.command[0].lower() == "alive":
-            await message.reply_photo(photo=ALIVE_PIC, caption=caption)
-            await message.delete()
+            try:
+                await message.reply_photo(photo=ALIVE_PIC, caption=caption)
+                await message.delete()
+            except Exception as e:
+                await client_eor(message, caption)
         else:
             await client_eor(message, caption)
     
-    # CLONE Command
+    # CLONE Command - FIXED
     @user_client.on_message(filters.command("clone", ".") & filters.me)
     async def clone_cmd(_, message: Message):
         text = get_text(message)
@@ -637,8 +685,8 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
         elif text:
             try:
                 user = await user_client.get_users(text)
-            except:
-                return await client_eor(message, "`User not found!`")
+            except Exception as e:
+                return await client_eor(message, f"`❌ User not found! Error: {e}`")
         else:
             return await client_eor(message, "`Reply to user or give username/id!`")
         
@@ -654,33 +702,50 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
             
             # Step 2: Get target user's info
             await op.edit("`🎯 Getting target user's profile...`")
-            target_chat = await user_client.get_chat(user.id)
+            try:
+                target_chat = await user_client.get_chat(user.id)
+            except Exception as e:
+                await restore_original_profile(user_client, owner_id)
+                return await op.edit(f"`❌ Can't access target's profile! Error: {e}`")
             
             # Step 3: Delete current photos
             await op.edit("`🗑️ Clearing current profile photos...`")
-            async for photo in user_client.get_chat_photos("me"):
-                await user_client.delete_profile_photos(photo.file_id)
+            try:
+                async for photo in user_client.get_chat_photos("me"):
+                    await user_client.delete_profile_photos(photo.file_id)
+            except Exception as e:
+                print(f"Error deleting photos: {e}")
             
             # Step 4: Set new photos (up to 3)
             await op.edit("`📷 Setting new profile photos...`")
             photo_count = 0
-            async for photo in user_client.get_chat_photos(user.id, limit=3):
-                try:
-                    # Download photo
-                    photo_path = await user_client.download_media(photo.file_id)
-                    await user_client.set_profile_photo(photo=photo_path)
-                    os.remove(photo_path)
-                    photo_count += 1
-                except:
-                    pass
+            try:
+                async for photo in user_client.get_chat_photos(user.id, limit=3):
+                    try:
+                        # Download photo to memory
+                        photo_bytes = await user_client.download_media(photo.file_id, in_memory=True)
+                        # Set as profile photo
+                        await user_client.set_profile_photo(photo=photo_bytes)
+                        photo_count += 1
+                    except Exception as e:
+                        print(f"Error setting photo: {e}")
+                        continue
+            except Exception as e:
+                print(f"Error accessing target photos: {e}")
             
             # Step 5: Update bio and name
             await op.edit("`📝 Updating profile info...`")
-            await user_client.update_profile(
-                first_name=user.first_name or "User",
-                last_name=user.last_name or "",
-                bio=target_chat.bio[:70] if target_chat.bio else ""  # Bio has 70 char limit
-            )
+            try:
+                # Bio limit is 140 characters
+                new_bio = target_chat.bio[:140] if target_chat.bio else ""
+                
+                await user_client.update_profile(
+                    first_name=user.first_name or "User",
+                    last_name=user.last_name or "",
+                    bio=new_bio
+                )
+            except Exception as e:
+                print(f"Error updating profile info: {e}")
             
             # Step 6: Try to update username (if target has username)
             username_status = "Not Changed"
@@ -705,7 +770,7 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
                 await restore_original_profile(user_client, owner_id)
             await op.edit(f"`❌ Error: {e}`")
     
-    # REVERT Command
+    # REVERT Command - FIXED
     @user_client.on_message(filters.command("revert", ".") & filters.me)
     async def revert_cmd(_, message: Message):
         my_id = (await user_client.get_me()).id
@@ -736,8 +801,7 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
         except Exception as e:
             await op.edit(f"`❌ Error while reverting: {e}`")
 
-    # SPAM 
-    # SIMPLE SPAM Command - Reply Only (Optimized)
+    # SPAM Command - Reply Only (Optimized)
     @user_client.on_message(filters.command("spam", ".") & filters.me)
     async def spam_cmd(_, message: Message):
         if not message.reply_to_message:
@@ -778,10 +842,11 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
                 await asyncio.sleep(0.3)
             except FloodWait as e:
                 await asyncio.sleep(e.value)
-            except:
+            except Exception as e:
+                print(f"Error in spam: {e}")
                 continue
     
-    # RAID Commands
+    # RAID Commands with better error handling
     @user_client.on_message(filters.command(["raid", "r"], ".") & filters.me)
     async def raid_cmd(_, message: Message):
         text = get_text(message)
@@ -802,8 +867,8 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
             elif target_str:
                 try:
                     user = await user_client.get_users(target_str)
-                except:
-                    return await client_eor(message, "`User not found!`")
+                except Exception as e:
+                    return await client_eor(message, f"`❌ User not found! Error: {e}`")
             else:
                 return await client_eor(message, "`Reply to user or give username/id!`")
                 
@@ -812,16 +877,20 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
                 
             await message.delete()
             for _ in range(count):
-                await user_client.send_message(
-                    message.chat.id, 
-                    f"{user.mention} {random.choice(RAID)}"
-                )
-                await asyncio.sleep(0.3)
+                try:
+                    await user_client.send_message(
+                        message.chat.id, 
+                        f"{user.mention} {random.choice(RAID)}"
+                    )
+                    await asyncio.sleep(0.3)
+                except Exception as e:
+                    print(f"Error in raid: {e}")
+                    continue
                 
         except Exception as e:
             await client_eor(message, f"`Error: {e}`")
     
-    # LOVE RAID Command
+    # LOVE RAID Command with better error handling
     @user_client.on_message(filters.command(["lraid", "lr"], ".") & filters.me)
     async def lraid_cmd(_, message: Message):
         text = get_text(message)
@@ -842,18 +911,22 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
             elif target_str:
                 try:
                     user = await user_client.get_users(target_str)
-                except:
-                    return await client_eor(message, "`User not found!`")
+                except Exception as e:
+                    return await client_eor(message, f"`❌ User not found! Error: {e}`")
             else:
                 return await client_eor(message, "`Reply to user or give username/id!`")
                 
             await message.delete()
             for _ in range(count):
-                await user_client.send_message(
-                    message.chat.id, 
-                    f"{user.mention} {random.choice(LOVE)}"
-                )
-                await asyncio.sleep(0.3)
+                try:
+                    await user_client.send_message(
+                        message.chat.id, 
+                        f"{user.mention} {random.choice(LOVE)}"
+                    )
+                    await asyncio.sleep(0.3)
+                except Exception as e:
+                    print(f"Error in love raid: {e}")
+                    continue
                 
         except Exception as e:
             await client_eor(message, f"`Error: {e}`")
@@ -876,7 +949,8 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
                 await asyncio.sleep(0.5)
             except FloodWait as e:
                 await asyncio.sleep(e.value)
-            except:
+            except Exception as e:
+                print(f"Error in pornspam: {e}")
                 pass
     
     # HANG Command
@@ -893,8 +967,12 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
         await message.delete()
         hang_text = "⃟" * 1000
         for _ in range(count):
-            await user_client.send_message(message.chat.id, hang_text)
-            await asyncio.sleep(0.5)
+            try:
+                await user_client.send_message(message.chat.id, hang_text)
+                await asyncio.sleep(0.5)
+            except Exception as e:
+                print(f"Error in hang: {e}")
+                continue
     
     # TAG ALL Command
     @user_client.on_message(filters.command("all", ".") & filters.me)
@@ -907,21 +985,24 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
         members_text = ""
         count = 0
         
-        async for member in user_client.get_chat_members(chat_id):
-            if member.user.is_bot or member.user.is_deleted:
-                continue
+        try:
+            async for member in user_client.get_chat_members(chat_id):
+                if member.user.is_bot or member.user.is_deleted:
+                    continue
+                    
+                members_text += f"[{member.user.first_name}](tg://user?id={member.user.id}) "
+                count += 1
                 
-            members_text += f"[{member.user.first_name}](tg://user?id={member.user.id}) "
-            count += 1
-            
-            if count == 5:
+                if count == 5:
+                    await user_client.send_message(chat_id, f"{text}\n\n{members_text}")
+                    members_text = ""
+                    count = 0
+                    await asyncio.sleep(2)
+                    
+            if members_text:
                 await user_client.send_message(chat_id, f"{text}\n\n{members_text}")
-                members_text = ""
-                count = 0
-                await asyncio.sleep(2)
-                
-        if members_text:
-            await user_client.send_message(chat_id, f"{text}\n\n{members_text}")
+        except Exception as e:
+            print(f"Error in tagall: {e}")
 
     # CANCEL Command for tag all
     @user_client.on_message(filters.command("cancel", ".") & filters.me)
@@ -955,7 +1036,7 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
         ACTIVATE_RLIST[owner_id].append(user.id)
         await client_eor(message, f"**✅ Reply Raid Activated!**\n**User:** {user.mention}")
     
-    # REPLY RAID DEACTIVATE - Modified to support Owner/Sudo control
+    # REPLY RAID DEACTIVATE
     @user_client.on_message(filters.command("drr", ".") & filters.me)
     async def replyraid_deactivate(_, message: Message):
         text = get_text(message)
@@ -1027,7 +1108,7 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
         ACTIVATE_LLIST[owner_id].append(user.id)
         await client_eor(message, f"**💕 Love Reply Raid Activated!**\n**User:** {user.mention}")
     
-    # LOVE REPLY RAID DEACTIVATE - Modified to support Owner/Sudo control
+    # LOVE REPLY RAID DEACTIVATE
     @user_client.on_message(filters.command("drlr", ".") & filters.me)
     async def lovereplyraid_deactivate(_, message: Message):
         text = get_text(message)
@@ -1097,7 +1178,8 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
                     f"{message.from_user.mention} {raid_msg}",
                     reply_to_message_id=message.id
                 )
-            except:
+            except Exception as e:
+                print(f"Error in auto reply raid: {e}")
                 pass
         
         # Check for love reply raid for this hoster
@@ -1109,7 +1191,8 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
                     f"{message.from_user.mention} {love_msg}",
                     reply_to_message_id=message.id
                 )
-            except:
+            except Exception as e:
+                print(f"Error in auto love reply raid: {e}")
                 pass
 
 # ================================== MAIN ================================== #
