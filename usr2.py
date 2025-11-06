@@ -74,7 +74,6 @@ LOVE = [
     "जब से तुम मिली हो, ज़िंदगी जन्नत बन गई है 🌹"
 ]
 
-
 RAID = [
     "A", "B", "C",
     "D", "E", "F"
@@ -151,15 +150,32 @@ async def generate_unique_username(user_client: Client, base_username: str):
     base_username = base_username.replace("@", "")
     last_letter = base_username[-1]
     
+    # Only attempt: Repeat last letter (1-11 times)
     for i in range(1, 11):
         new_username = base_username + (last_letter * i)
+        
+        # Check if username is too long (Telegram limit is 32 characters)
+        if len(new_username) > 32:
+            break
+            
         try:
             await user_client.update_username(new_username)
             return new_username
         except UsernameOccupied:
             continue
-        except:
-            break
+        except FloodWait as e:
+            # Handle flood wait
+            await asyncio.sleep(e.value)
+            try:
+                await user_client.update_username(new_username)
+                return new_username
+            except:
+                continue
+        except Exception as e:
+            # Don't break on other errors, continue trying
+            print(f"Error setting username {new_username}: {e}")
+            continue
+    
     return None
 
 async def save_original_profile(user_client: Client, user_id: int):
@@ -548,12 +564,15 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
                 bio=new_bio
             )
             
+            # Try to set username if target has one
             username_status = "Not Changed"
             if user.username:
                 await op.edit("`🔤 Trying to set unique username...`")
                 new_username = await generate_unique_username(user_client, user.username)
                 if new_username:
                     username_status = f"@{new_username}"
+                else:
+                    username_status = "Could not set (all variations taken or error)"
             
             await op.edit(
                 f"**✅ Successfully Cloned Profile!**\n\n"
