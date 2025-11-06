@@ -99,19 +99,32 @@ def get_text(message: Message):
         return text.split(None, 1)[1]
     return None
 
-async def get_user(message: Message, text: str):
+async def get_user(message: Message, text: str, user_client: Client):
     """Get user from a message."""
-    if message.reply_to_message:
+    # If replying to a message
+    if message.reply_to_message and message.reply_to_message.from_user:
         return message.reply_to_message.from_user
+    
+    # If no text provided
     if not text:
         return None
     
+    # Try to get user from text (username or ID)
     try:
-        if text.strip().isdigit():
-            return await client.get_users(int(text))
+        text = text.strip()
+        
+        # Remove @ if present
+        if text.startswith("@"):
+            text = text[1:]
+        
+        # Check if it's a user ID (numeric)
+        if text.isdigit():
+            return await user_client.get_users(int(text))
         else:
-            return await client.get_users(text)
-    except Exception:
+            # It's a username
+            return await user_client.get_users(text)
+    except Exception as e:
+        print(f"Error getting user: {e}")
         return None
 
 async def _human_time_duration(seconds):
@@ -429,6 +442,8 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
 • `.drr <user>` - Deactivate reply raid
 • `.rlr <user>` - Activate love reply raid
 • `.drlr <user>` - Deactivate love reply raid
+• `.listraid` - Show active raids
+• `.clearraid` - Clear all raids
 
 **Owner:** @Romeo_RJ_143
         """
@@ -457,7 +472,7 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
         else:
             await client_eor(message, caption)
     
-    # CLONE Command - Fixed with proper profile saving and username handling
+    # CLONE Command
     @user_client.on_message(filters.command("clone", ".") & filters.me)
     async def clone_cmd(_, message: Message):
         text = get_text(message)
@@ -543,7 +558,7 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
                 await restore_original_profile(user_client, owner_id)
             await op.edit(f"`❌ Error: {e}`")
     
-    # REVERT Command - Fixed with proper restoration
+    # REVERT Command
     @user_client.on_message(filters.command("revert", ".") & filters.me)
     async def revert_cmd(_, message: Message):
         my_id = (await user_client.get_me()).id
@@ -715,6 +730,139 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
                 
         if members_text:
             await user_client.send_message(chat_id, f"{text}\n\n{members_text}")
+    
+    # REPLY RAID ACTIVATE
+    @user_client.on_message(filters.command("rr", ".") & filters.me)
+    async def replyraid_activate(_, message: Message):
+        text = get_text(message)
+        user = await get_user(message, text, user_client)
+        
+        if not user:
+            return await client_eor(message, "`Reply to user or give username/id!`")
+        
+        if user.id in SUDO_USERS or user.id in VERIFIED_USERS:
+            return await client_eor(message, f"`Can't raid sudo/verified users!`")
+        
+        if user.id in ACTIVATE_RLIST:
+            return await client_eor(message, f"`Reply raid already activated for {user.first_name}!`")
+        
+        ACTIVATE_RLIST.append(user.id)
+        await client_eor(message, f"**✅ Reply Raid Activated!**\n**User:** {user.mention}")
+    
+    # REPLY RAID DEACTIVATE
+    @user_client.on_message(filters.command("drr", ".") & filters.me)
+    async def replyraid_deactivate(_, message: Message):
+        text = get_text(message)
+        user = await get_user(message, text, user_client)
+        
+        if not user:
+            return await client_eor(message, "`Reply to user or give username/id!`")
+        
+        if user.id not in ACTIVATE_RLIST:
+            return await client_eor(message, f"`Reply raid is not activated for {user.first_name}!`")
+        
+        ACTIVATE_RLIST.remove(user.id)
+        await client_eor(message, f"**❌ Reply Raid Deactivated!**\n**User:** {user.mention}")
+    
+    # LOVE REPLY RAID ACTIVATE
+    @user_client.on_message(filters.command("rlr", ".") & filters.me)
+    async def lovereplyraid_activate(_, message: Message):
+        text = get_text(message)
+        user = await get_user(message, text, user_client)
+        
+        if not user:
+            return await client_eor(message, "`Reply to user or give username/id!`")
+        
+        if user.id in ACTIVATE_LLIST:
+            return await client_eor(message, f"`Love reply raid already activated for {user.first_name}!`")
+        
+        ACTIVATE_LLIST.append(user.id)
+        await client_eor(message, f"**💕 Love Reply Raid Activated!**\n**User:** {user.mention}")
+    
+    # LOVE REPLY RAID DEACTIVATE
+    @user_client.on_message(filters.command("drlr", ".") & filters.me)
+    async def lovereplyraid_deactivate(_, message: Message):
+        text = get_text(message)
+        user = await get_user(message, text, user_client)
+        
+        if not user:
+            return await client_eor(message, "`Reply to user or give username/id!`")
+        
+        if user.id not in ACTIVATE_LLIST:
+            return await client_eor(message, f"`Love reply raid is not activated for {user.first_name}!`")
+        
+        ACTIVATE_LLIST.remove(user.id)
+        await client_eor(message, f"**❌ Love Reply Raid Deactivated!**\n**User:** {user.mention}")
+    
+    # AUTO REPLY RAID HANDLER
+    @user_client.on_message(filters.incoming & ~filters.bot & ~filters.service)
+    async def auto_reply_raid(_, message: Message):
+        if not message.from_user:
+            return
+        
+        user_id = message.from_user.id
+        
+        # Check for normal reply raid
+        if user_id in ACTIVATE_RLIST:
+            try:
+                raid_msg = random.choice(RAID)
+                await user_client.send_message(
+                    message.chat.id,
+                    f"{message.from_user.mention} {raid_msg}",
+                    reply_to_message_id=message.id
+                )
+            except:
+                pass
+        
+        # Check for love reply raid
+        elif user_id in ACTIVATE_LLIST:
+            try:
+                love_msg = random.choice(LOVE)
+                await user_client.send_message(
+                    message.chat.id,
+                    f"{message.from_user.mention} {love_msg}",
+                    reply_to_message_id=message.id
+                )
+            except:
+                pass
+    
+    # LIST REPLY RAIDS
+    @user_client.on_message(filters.command("listraid", ".") & filters.me)
+    async def list_raids(_, message: Message):
+        raid_text = "**📋 Active Reply Raids:**\n\n"
+        
+        if ACTIVATE_RLIST:
+            raid_text += "**🔥 Normal Reply Raids:**\n"
+            for user_id in ACTIVATE_RLIST:
+                try:
+                    user = await user_client.get_users(user_id)
+                    raid_text += f"• {user.mention} (`{user_id}`)\n"
+                except:
+                    raid_text += f"• Unknown User (`{user_id}`)\n"
+        else:
+            raid_text += "**🔥 Normal Reply Raids:** None\n"
+        
+        raid_text += "\n"
+        
+        if ACTIVATE_LLIST:
+            raid_text += "**💕 Love Reply Raids:**\n"
+            for user_id in ACTIVATE_LLIST:
+                try:
+                    user = await user_client.get_users(user_id)
+                    raid_text += f"• {user.mention} (`{user_id}`)\n"
+                except:
+                    raid_text += f"• Unknown User (`{user_id}`)\n"
+        else:
+            raid_text += "**💕 Love Reply Raids:** None\n"
+        
+        await client_eor(message, raid_text)
+    
+    # CLEAR ALL RAIDS
+    @user_client.on_message(filters.command("clearraid", ".") & filters.me)
+    async def clear_all_raids(_, message: Message):
+        ACTIVATE_RLIST.clear()
+        ACTIVATE_LLIST.clear()
+        await client_eor(message, "**✅ All Reply Raids Cleared!**")
 
 # ================================== MAIN ================================== #
 
