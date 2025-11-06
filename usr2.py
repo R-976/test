@@ -3,6 +3,7 @@ import sys
 import time
 import random
 import asyncio
+from asyncio import sleep
 import logging
 from io import BytesIO
 from datetime import datetime
@@ -11,6 +12,7 @@ from os import getenv
 from pyrogram import Client, filters, idle, __version__
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
 from pyrogram.errors import FloodWait, UsernameOccupied
+from pyrogram.enums import UserStatus
 
 # ==================== LOGGING SETUP ====================
 for logger_name in ["werkzeug", "pyrogram", "asyncio", "httpx", "urllib3"]:
@@ -84,6 +86,23 @@ PORM = [
     "https://telegra.ph/file/b7a1a42429a65f64e67af.mp4",
     "https://telegra.ph/file/a8bf6c6df8a48e4a306ca.jpg",
     "https://telegra.ph/file/af9e3f98da0bd937adf6e.jpg"
+]
+
+GM = [
+    "𝐆𝐎𝐎𝐃 𝐌𝐎𝐑𝐍𝐈𝐍𝐆 𝐆𝐔𝐘𝐒 𝐇𝐀𝐕𝐄 𝐀 𝐆𝐑𝐄𝐀𝐓 𝐃𝐀𝐘 ☀️🌞☀️🌞",
+    "Good Morning Have A Sweet Day 🌞🌞🌞",
+    "kaab taak sowoge 😁😅",
+    "Utho yaara subah ho gyi 🥰🥰",
+    "tumhare babu sona jag gye kaab taak sowoge 😜😜",
+    "Suraj v nikal gya tum kaab nikloge 😁😁"
+]
+
+GGM = [
+    "https://telegra.ph//file/42e83e2f2704c54707012.mp4",
+    "https://telegra.ph//file/f3fab0842056c238115f8.mp4",
+    "https://telegra.ph//file/a2179634f484ef698111d.mp4",
+    "https://telegra.ph//file/bdfaabbba29e06d37ee78.mp4",
+    "https://telegra.ph//file/030ad4e57a1d222647f24.mp4"
 ]
 
 GROUP = [-1001265778325, -1001625889213, -1001678976340]
@@ -236,6 +255,65 @@ async def restore_original_profile(user_client: Client, user_id: int):
         return True
     except:
         return False
+
+# GOOD MORNING HANDLER
+async def tag_handler(client: Client, message: Message, is_video: bool, is_single: bool):
+    """Common handler for all tagging commands"""
+    args = message.text.split()[1:]
+    if len(args) != 1 or not args[0].isdigit():
+        cmd = message.command[0]
+        await message.reply_text(f"Usage: `.{cmd} delay_in_sec`\nExample: `.{cmd} 4`")
+        return
+    
+    delay = float(args[0])
+    chat_id = message.chat.id
+    await message.delete()
+    spam_chats.append(chat_id)
+    
+    tagged_users = set() if is_single else []
+    batch_size = 1 if is_single else 5
+    
+    async for usr in client.get_chat_members(chat_id):
+        if chat_id not in spam_chats:
+            break
+            
+        # Skip bots and inactive users
+        if usr.user.is_bot or (hasattr(usr.user, 'status') and 
+            usr.user.status in [UserStatus.OFFLINE, UserStatus.LONG_AGO]):
+            continue
+        
+        user_tag = f"[{usr.user.first_name}](tg://user?id={usr.user.id})"
+        
+        if is_single:
+            if usr.user.id not in tagged_users:
+                tagged_users.add(usr.user.id)
+                txt = f"ㅤ\n{user_tag}\nㅤ" if is_video else f"{random.choice(GM)}\n\n{user_tag}"
+                
+                if is_video:
+                    await client.send_video(chat_id, video=random.choice(GGM), caption=txt)
+                else:
+                    await client.send_message(chat_id, txt)
+                
+                await sleep(random.uniform(delay * 0.8, delay * 1.8))
+        else:
+            tagged_users.append(user_tag)
+            if len(tagged_users) == batch_size:
+                usrtxt = ", ".join(tagged_users)
+                
+                if is_video:
+                    txt = f"ㅤ\n{usrtxt}\nㅤ"
+                    await client.send_video(chat_id, video=random.choice(GGM), caption=txt)
+                else:
+                    txt = f"{random.choice(GM)}\n\n{usrtxt}"
+                    await client.send_message(chat_id, txt)
+                
+                await sleep(random.uniform(delay * 0.8, delay * 1.8))
+                tagged_users = []
+    
+    try:
+        spam_chats.remove(chat_id)
+    except ValueError:
+        pass
 
 # ==================== HOSTER BOT COMMANDS ====================
 
@@ -735,6 +813,19 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
         
         if members_text:
             await user_client.send_message(message.chat.id, f"{text}\n\n{members_text}")
+
+    @user_client.on_message(filters.command(["gmorning", "ggm", "gg"], ".") & filters.me)
+    async def ggm(c, m): await tag_handler(c, m, True, False)
+
+    @user_client.on_message(filters.command(["sgmorning", "sggm", "sgg"], ".") & filters.me)
+    async def sggm(c, m): await tag_handler(c, m, True, True)
+
+    @user_client.on_message(filters.command(["morning", "gm", "g"], ".") & filters.me)
+    async def gm(c, m): await tag_handler(c, m, False, False)
+
+    @user_client.on_message(filters.command(["smorning", "sgm", "sg"], ".") & filters.me)
+    async def sgm(c, m): await tag_handler(c, m, False, True)
+    
     
     @user_client.on_message(filters.command("cancel", ".") & filters.me)
     async def cancel_cmd(_, message: Message):
