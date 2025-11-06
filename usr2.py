@@ -2,14 +2,11 @@ import os
 import sys
 import random
 import asyncio
-import time
 import logging
 from io import BytesIO
 from datetime import datetime
 from platform import python_version
 from os import getenv
-from flask import Flask
-from threading import Thread
 from pyrogram import Client, filters, idle, __version__
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
 from pyrogram.errors import FloodWait, UsernameOccupied
@@ -19,6 +16,9 @@ for logger_name in ["werkzeug", "pyrogram", "asyncio", "httpx", "urllib3"]:
     logging.getLogger(logger_name).setLevel(logging.CRITICAL)
 
 # ==================== FLASK SERVER FOR RENDER ====================
+from flask import Flask
+from threading import Thread
+
 flask_app = Flask(__name__)
 flask_app.logger.disabled = True
 
@@ -41,7 +41,6 @@ def run_flask():
 
 flask_thread = Thread(target=run_flask, daemon=True)
 flask_thread.start()
-time.sleep(2)
 print("✅ Flask server started successfully!")
 
 # ==================== CONFIG ====================
