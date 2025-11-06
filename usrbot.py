@@ -1,34 +1,24 @@
 import os
 import sys
-import json
 import random
 import asyncio
-import re
+import time
+import logging
 from io import BytesIO
-from time import time
 from datetime import datetime
 from platform import python_version
 from os import getenv
-from pyrogram import Client, filters, idle, enums, __version__
-from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
-from pyrogram.errors import FloodWait, UsernameNotOccupied, UsernameOccupied
-
-# ==================== FLASK SERVER FOR RENDER ====================
-import os
-import time
-import logging
 from flask import Flask
 from threading import Thread
+from pyrogram import Client, filters, idle, __version__
+from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
+from pyrogram.errors import FloodWait, UsernameOccupied
 
-logging.basicConfig(level=logging.CRITICAL)
-logging.getLogger("werkzeug").setLevel(logging.CRITICAL)
-logging.getLogger("pyrogram").setLevel(logging.CRITICAL)
-logging.getLogger("asyncio").setLevel(logging.CRITICAL)
-logging.getLogger("httpx").setLevel(logging.CRITICAL)
-logging.getLogger("urllib3").setLevel(logging.CRITICAL)
+# ==================== LOGGING SETUP ====================
+for logger_name in ["werkzeug", "pyrogram", "asyncio", "httpx", "urllib3"]:
+    logging.getLogger(logger_name).setLevel(logging.CRITICAL)
 
-logger = logging.getLogger(__name__)
-
+# ==================== FLASK SERVER FOR RENDER ====================
 flask_app = Flask(__name__)
 flask_app.logger.disabled = True
 
@@ -45,28 +35,16 @@ def healthz():
     return "", 204
 
 def run_flask():
-    """Flask server to keep Render happy"""
-    port = int(os.getenv("PORT", 8080))
+    port = int(getenv("PORT", 8080))
     print(f"🌐 Flask server starting on port {port}...")
-    import logging as flask_logging
-    log = flask_logging.getLogger('werkzeug')
-    log.setLevel(flask_logging.ERROR)
-    log.disabled = True
-    flask_app.run(
-        host="0.0.0.0",
-        port=port,
-        debug=False,
-        use_reloader=False,
-        threaded=True
-    )
+    flask_app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False, threaded=True)
 
 flask_thread = Thread(target=run_flask, daemon=True)
 flask_thread.start()
 time.sleep(2)
 print("✅ Flask server started successfully!")
 
-# ================================== CONFIG ================================== #
-
+# ==================== CONFIG ====================
 API_ID = int(getenv("API_ID", "10796618"))
 API_HASH = getenv("API_HASH", "4e4b20b4e1e40c90fcb1a7658c800150")
 BOT_TOKEN = getenv("BOT_TOKEN", "8351290809:AAFahqEdQgI1KKiHDWBHZVrGRYqLwz0IkG4")
@@ -74,205 +52,140 @@ OWNER_ID = int(getenv("OWNER_ID", "8288876886"))
 STRING_SESSION = getenv("STRING_SESSION", "BQEiZi4AAANrPUa2j8zWuh_6NYpESzWOkGOuxv3io0xUzrvHmrBvC4-QtvwS3zvvdztdkdwbviqXpsQO2WbbskEYV6ype-ee4wfitd0y0CGccOI0ncngKzyKaotCzgjz0O8kiuR7QhDuDzQZBWtitvhVleejrX7VLUMHk4C9dxkcHQ9G2yLs2kT8oGsqqGb3udrkvKWzt3EYCkRZx1IVEcGu3bl8L53bpT8qDMfp2PTuzu2AW3XNK_P45bYGGKPfy7FWOxVQ2Mf7UpHtQJJACDWtq-3BKf5D-rUPXWl6PpSOB6tLF-ekcNWmBbW4DA5z5U1Q92UGGfy852ZDsJjDZrpW1HvzWQAAAAHuDjlWAA")
 SUDO_USERS = list(map(int, getenv("SUDO_USERS", "7041789891").split()))
 ALIVE_PIC = getenv("ALIVE_PIC", "https://telegra.ph/file/a62b9c7d9848afde0569e.jpg")
-BIO_FALLBACK = getenv("BIO", "Romeo Userbot")
 
-# ================================== GLOBALS ================================= #
-
+# ==================== GLOBALS ====================
 START_TIME = datetime.utcnow()
 SUDO_USERS.append(OWNER_ID)
 
-# State lists
+# State management
 spam_chats = []
-ACTIVATE_RLIST = {}  # {hoster_id: [user_ids]}  - Reply Raid per hoster
-ACTIVATE_LLIST = {}  # {hoster_id: [user_ids]}  - Love Reply Raid per hoster
-
-# Temporary hosted clients dictionary
+ACTIVATE_RLIST = {}  # {hoster_id: [user_ids]}
+ACTIVATE_LLIST = {}  # {hoster_id: [user_ids]}
 HOSTED_CLIENTS = {}  # {user_id: client_instance}
-
-# Original profile data storage with binary photo data
-ORIGINAL_PROFILES = {}  # {user_id: {"first_name": "", "last_name": "", "bio": "", "username": "", "photos_data": [bytes]}}
+ORIGINAL_PROFILES = {}  # {user_id: profile_data}
 
 # Content Lists
 LOVE = [
     "𝒀𝒂𝒓 𝑨𝒑𝒌𝒊 𝑩𝒂𝒕𝒆𝒏 𝑺𝒖𝒏 𝑲𝒂𝒓 𝑻𝒐 𝑴𝒖𝒋𝒆 𝑨𝒑𝒌𝒐 𝑴𝒆𝒓𝒊 𝑱𝒂𝒂𝒏𝒖 𝑩𝒂𝒏𝒐𝒈𝒊 𝑨𝒘𝒂𝒓𝒅 𝑫𝒆𝒏𝒆 𝑲𝒂 𝑴𝒂𝒏 𝑲𝒂𝒓 𝑹𝒂𝒉𝒂 𝒉𝒂𝒊",
-    "आप इतने क्यूट हो की अगर 𝑴𝑺𝑮 ना भी करना चाहू. तो भी हाथ खुद कीपैड पर चलने लगता है !",
+    "आप इतने क्यूट हो की अगर MSG ना भी करना चाहू. तो भी हाथ खुद कीपैड पर चलने लगता है !",
     "मै तो सिर्फ तुम्हारे प्यार का नशा करता हु , एंड उसके हेंग ओवर के आगे कोई और नशे की जरुरत नहीं है !",
     "कुछ ऐसे हस्दे ज़िन्दगी मैं होते है🤔🤔, के इंसान तो बच जाता है मगर ज़िंदा नहीं रहता😂💓",
     "तुम्हारी मुस्कान देख कर मेरा दिल पिघल जाता है 💖",
-    "जब से तुम मिली हो, ज़िंदगी जन्नत बन गई है 🌹",
+    "जब से तुम मिली हो, ज़िंदगी जन्नत बन गई है 🌹"
 ]
+
 
 RAID = [
     "A", "B", "C",
-    "D", "E", "F",
+    "D", "E", "F"
 ]
 
 PORM = [
     "https://telegra.ph/file/9bcc076fd81dfe3feb291.mp4",
     "https://telegra.ph/file/b7a1a42429a65f64e67af.mp4",
     "https://telegra.ph/file/a8bf6c6df8a48e4a306ca.jpg",
-    "https://telegra.ph/file/af9e3f98da0bd937adf6e.jpg",
+    "https://telegra.ph/file/af9e3f98da0bd937adf6e.jpg"
 ]
 
-# Restricted Groups
 GROUP = [-1001265778325, -1001625889213, -1001678976340]
-VERIFIED_USERS = [5368154755, 5353539036, 5392070730]  # Devs, etc.
+VERIFIED_USERS = [5368154755, 5353539036, 5392070730]
 
-# ============================ INITIALIZING CLIENTS ============================ #
+# ==================== CLIENTS ====================
+app = Client("HosterBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True)
+client = Client("Userbot", api_id=API_ID, api_hash=API_HASH, session_string=STRING_SESSION, in_memory=True)
 
-# Hoster Bot Client
-app = Client(
-    name="HosterBot",
-    api_id=API_ID,
-    api_hash=API_HASH,
-    bot_token=BOT_TOKEN,
-    in_memory=True
-)
-
-# Main Userbot Client (Owner's)
-client = Client(
-    name="Userbot",
-    api_id=API_ID,
-    api_hash=API_HASH,
-    session_string=STRING_SESSION,
-    in_memory=True
-)
-
-# ================================== HELPERS ================================== #
+# ==================== HELPER FUNCTIONS ====================
 
 async def eor(message: Message, text: str, **kwargs):
-    """Edit own message or reply to the user's message."""
+    """Edit or Reply to message"""
     try:
         if message.from_user.is_self:
             return await message.edit_text(text, **kwargs)
         return await message.reply_text(text, **kwargs)
-    except Exception as e:
-        print(f"Error in eor: {e}")
-        return None
-
-def get_text(message: Message):
-    """Extract text from a command message."""
-    try:
-        text = message.text or ""
-        if " " in text:
-            return text.split(None, 1)[1]
-        return None
     except:
         return None
 
+def get_text(message: Message):
+    """Extract text from command"""
+    text = message.text or ""
+    if " " in text:
+        return text.split(None, 1)[1]
+    return None
+
 async def get_user(message: Message, text: str, user_client: Client):
-    """Get user from a message with better error handling."""
+    """Get user from message or text"""
     try:
-        # If replying to a message
         if message.reply_to_message and message.reply_to_message.from_user:
             return message.reply_to_message.from_user
         
-        # If no text provided
         if not text:
             return None
         
-        # Try to get user from text (username or ID)
         text = text.strip()
-        
-        # Remove @ if present
         if text.startswith("@"):
             text = text[1:]
         
-        # Check if it's a user ID (numeric)
         if text.isdigit():
-            try:
-                user = await user_client.get_users(int(text))
-                return user
-            except Exception as e:
-                print(f"Error getting user by ID: {e}")
-                return None
+            return await user_client.get_users(int(text))
         else:
-            # It's a username
-            try:
-                user = await user_client.get_users(text)
-                return user
-            except Exception as e:
-                print(f"Error getting user by username: {e}")
-                return None
-    except Exception as e:
-        print(f"Error in get_user: {e}")
+            return await user_client.get_users(text)
+    except:
         return None
 
 async def _human_time_duration(seconds):
-    """Convert seconds to a human-readable format."""
+    """Convert seconds to readable format"""
     if seconds == 0:
         return 'inf'
     parts = []
-    for unit, div in (('Week', 604800), ('Day', 86400), ('Hour', 3600), ('Min', 60), ('Sec', 1)):
+    for unit, div in [('Week', 604800), ('Day', 86400), ('Hour', 3600), ('Min', 60), ('Sec', 1)]:
         amount, seconds = divmod(int(seconds), div)
         if amount > 0:
             parts.append(f'{amount} {unit}{"s" if amount > 1 else ""}')
     return ', '.join(parts)
 
 async def generate_unique_username(user_client: Client, base_username: str):
-    """Generate a unique username by appending last letter repeatedly."""
+    """Generate unique username by appending last letter"""
     if not base_username:
         return None
     
-    # Remove @ if present
     base_username = base_username.replace("@", "")
-    
-    # Get last letter
     last_letter = base_username[-1]
-    new_username = base_username
     
-    # Try up to 10 times to find a unique username
     for i in range(1, 11):
         new_username = base_username + (last_letter * i)
-        
-        # Check if username is available
         try:
             await user_client.update_username(new_username)
             return new_username
         except UsernameOccupied:
             continue
-        except Exception as e:
-            print(f"Error setting username: {e}")
+        except:
             break
-    
     return None
 
 async def save_original_profile(user_client: Client, user_id: int):
-    """Save user's original profile data with proper photo handling."""
+    """Save user's original profile data"""
     try:
         me = await user_client.get_me()
         my_chat = await user_client.get_chat("me")
         
-        # Get all profile photos and save as binary data
         photos_data = []
         async for photo in user_client.get_chat_photos("me", limit=3):
-            try:
-                # Download photo to memory as bytes
-                photo_bytes = await user_client.download_media(
-                    photo.file_id,
-                    in_memory=True
-                )
-                photos_data.append(bytes(photo_bytes.getvalue()))
-            except Exception as e:
-                print(f"Error saving photo: {e}")
-                continue
+            photo_bytes = await user_client.download_media(photo.file_id, in_memory=True)
+            photos_data.append(bytes(photo_bytes.getvalue()))
         
-        # Store original profile data
         ORIGINAL_PROFILES[user_id] = {
             "first_name": me.first_name or "",
             "last_name": me.last_name or "",
-            "bio": my_chat.bio or "",  # Bio character limit is 140
+            "bio": my_chat.bio or "",
             "username": me.username or "",
-            "photos_data": photos_data  # Store binary photo data
+            "photos_data": photos_data
         }
-        
         return True
-    except Exception as e:
-        print(f"Error saving profile: {e}")
+    except:
         return False
 
 async def restore_original_profile(user_client: Client, user_id: int):
-    """Restore user's original profile data with proper photo handling."""
+    """Restore user's original profile data"""
     try:
         if user_id not in ORIGINAL_PROFILES:
             return False
@@ -280,51 +193,36 @@ async def restore_original_profile(user_client: Client, user_id: int):
         original_data = ORIGINAL_PROFILES[user_id]
         
         # Delete current photos
-        try:
-            async for photo in user_client.get_chat_photos("me"):
-                await user_client.delete_profile_photos(photo.file_id)
-        except Exception as e:
-            print(f"Error deleting photos: {e}")
+        async for photo in user_client.get_chat_photos("me"):
+            await user_client.delete_profile_photos(photo.file_id)
         
-        # Restore original photos from binary data
+        # Restore photos
         for photo_bytes in original_data.get("photos_data", []):
-            try:
-                # Create BytesIO object from bytes
-                photo_file = BytesIO(photo_bytes)
-                photo_file.name = "photo.jpg"
-                await user_client.set_profile_photo(photo=photo_file)
-            except Exception as e:
-                print(f"Error restoring photo: {e}")
-                continue
+            photo_file = BytesIO(photo_bytes)
+            photo_file.name = "photo.jpg"
+            await user_client.set_profile_photo(photo=photo_file)
         
         # Restore profile info
-        try:
-            await user_client.update_profile(
-                first_name=original_data.get("first_name", ""),
-                last_name=original_data.get("last_name", ""),
-                bio=original_data.get("bio", "")[:140]  # Bio limit 140 characters
-            )
-        except Exception as e:
-            print(f"Error updating profile: {e}")
+        await user_client.update_profile(
+            first_name=original_data.get("first_name", ""),
+            last_name=original_data.get("last_name", ""),
+            bio=original_data.get("bio", "")[:140]
+        )
         
         # Restore username
         if original_data.get("username"):
             try:
                 await user_client.update_username(original_data.get("username"))
-            except Exception as e:
-                print(f"Error restoring username: {e}")
+            except:
+                pass
         
-        # Clear saved data to free memory
         del ORIGINAL_PROFILES[user_id]
-        
         return True
-    except Exception as e:
-        print(f"Error restoring profile: {e}")
+    except:
         return False
 
-# ================================== HOSTER BOT COMMANDS ================================ #
+# ==================== HOSTER BOT COMMANDS ====================
 
-# Universal Commands - Sab use kar sakte hain
 @app.on_message(filters.command("start", ["/", "!", "."]) & filters.private)
 async def start_hoster_command(_, message: Message):
     caption = (
@@ -336,7 +234,7 @@ async def start_hoster_command(_, message: Message):
         "• `/host <SESSION_STRING>` - Apna userbot activate karo\n"
         "• `/stop` - Apna userbot deactivate karo\n"
         "• `/status` - Check karo ka aapka userbot chal raha hai ya nahi\n\n"
-        "**Only Owner Commands :**\n"
+        "**Only Owner Commands:**\n"
         "• `/restart` - Restart bot\n"
         "• `/listraid` - Show all active raids\n"
         "• `/clearraid` - Clear all raids\n\n"
@@ -346,11 +244,7 @@ async def start_hoster_command(_, message: Message):
         [InlineKeyboardButton("📣 Support Group", url="https://t.me/RomeoBot_op")],
         [InlineKeyboardButton("🔔 Updates Channel", url="https://t.me/Romeo_op")]
     ]
-    await message.reply_photo(
-        photo=ALIVE_PIC,
-        caption=caption,
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
+    await message.reply_photo(ALIVE_PIC, caption=caption, reply_markup=InlineKeyboardMarkup(buttons))
 
 @app.on_message(filters.command(["host", "clone"], ["/", "!", "."]) & filters.private)
 async def host_client_command(_, message: Message):
@@ -359,10 +253,9 @@ async def host_client_command(_, message: Message):
             "❌ **Session String nahi diya!**\n\n"
             "✅ **Correct Usage:** `/host YOUR_SESSION_STRING`"
         )
-
+    
     user_id = message.from_user.id
     
-    # Check if user already has a hosted client
     if user_id in HOSTED_CLIENTS:
         return await message.reply_text(
             "⚠️ **Aapka userbot pehle se active hai!**\n"
@@ -373,8 +266,7 @@ async def host_client_command(_, message: Message):
     op = await message.reply_text("🔄 **Aapka userbot start ho raha hai...**")
     
     try:
-        # Create new client for this user
-        client_name = f"userbot_{user_id}_{int(time())}"
+        client_name = f"userbot_{user_id}_{int(time.time())}"
         new_client = Client(
             name=client_name,
             api_id=API_ID,
@@ -384,20 +276,16 @@ async def host_client_command(_, message: Message):
             no_updates=False
         )
         
-        # Start the client
         await new_client.start()
         user = await new_client.get_me()
         
-        # Store client in dictionary
         HOSTED_CLIENTS[user_id] = new_client
         
-        # Initialize raid lists for this hoster
         if user_id not in ACTIVATE_RLIST:
             ACTIVATE_RLIST[user_id] = []
         if user_id not in ACTIVATE_LLIST:
             ACTIVATE_LLIST[user_id] = []
         
-        # Register all userbot handlers for this client
         await register_userbot_handlers(new_client, user_id)
         
         await op.edit(
@@ -408,7 +296,6 @@ async def host_client_command(_, message: Message):
             f"**💡 Ab aap apne account pe `.help` command use kar sakte hain!**\n"
             f"**⏹️ Stop karne ke liye:** `/stop`"
         )
-        
     except Exception as e:
         if user_id in HOSTED_CLIENTS:
             del HOSTED_CLIENTS[user_id]
@@ -434,13 +321,10 @@ async def stop_client_command(_, message: Message):
         await HOSTED_CLIENTS[user_id].stop()
         del HOSTED_CLIENTS[user_id]
         
-        # Clean up raid lists
         if user_id in ACTIVATE_RLIST:
             del ACTIVATE_RLIST[user_id]
         if user_id in ACTIVATE_LLIST:
             del ACTIVATE_LLIST[user_id]
-        
-        # Clean up any saved profile data
         if user_id in ORIGINAL_PROFILES:
             del ORIGINAL_PROFILES[user_id]
         
@@ -467,7 +351,6 @@ async def status_command(_, message: Message):
         uptime_sec = (datetime.utcnow() - START_TIME).total_seconds()
         uptime = await _human_time_duration(int(uptime_sec))
         
-        # Count active raids for this user
         raid_count = len(ACTIVATE_RLIST.get(user_id, []))
         love_raid_count = len(ACTIVATE_LLIST.get(user_id, []))
         
@@ -484,18 +367,16 @@ async def status_command(_, message: Message):
     except Exception as e:
         await message.reply_text(f"❌ **Error:** `{e}`")
 
-# Admin Commands - Sirf Owner aur Sudo users
+# Admin Commands
 @app.on_message(filters.command("restart", ["/", "!"]) & filters.private)
 async def restart_command(_, message: Message):
     user_id = message.from_user.id
     
-    # Check if user is owner or sudo
     if user_id not in SUDO_USERS:
         return await message.reply_text("❌ **Sirf Owner/Sudo users ye command use kar sakte hain!**")
     
     op = await message.reply_text("🔄 **Restarting bot and clearing all hosted clients...**")
     
-    # Stop all hosted clients
     for uid, user_client in list(HOSTED_CLIENTS.items()):
         try:
             await user_client.stop()
@@ -513,58 +394,28 @@ async def restart_command(_, message: Message):
         "• Users ko dubara host karna hoga"
     )
     
-    # Restart the bot (this will exit the script, you need process manager to restart it)
     os.execl(sys.executable, sys.executable, *sys.argv)
 
 @app.on_message(filters.command("listraid", ["/", "!"]) & filters.private)
 async def bot_list_raids(_, message: Message):
     user_id = message.from_user.id
     
-    # Check if user is owner or sudo
     if user_id not in SUDO_USERS:
         return await message.reply_text("❌ **Sirf Owner/Sudo users ye command use kar sakte hain!**")
     
     raid_text = "**📋 All Active Reply Raids:**\n\n"
-    
-    # List all raids from all hosters
     total_raids = 0
     total_love_raids = 0
     
     for hoster_id, raid_list in ACTIVATE_RLIST.items():
         if raid_list:
-            try:
-                hoster = await app.get_users(hoster_id)
-                hoster_name = hoster.first_name
-            except:
-                hoster_name = f"User {hoster_id}"
-            
-            raid_text += f"**🔥 {hoster_name}'s Raids:**\n"
-            for target_id in raid_list:
-                try:
-                    target = await app.get_users(target_id)
-                    raid_text += f"  • {target.first_name} (`{target_id}`)\n"
-                    total_raids += 1
-                except:
-                    raid_text += f"  • Unknown User (`{target_id}`)\n"
-                    total_raids += 1
+            raid_text += f"**🔥 User {hoster_id}'s Raids:** {len(raid_list)} targets\n"
+            total_raids += len(raid_list)
     
     for hoster_id, raid_list in ACTIVATE_LLIST.items():
         if raid_list:
-            try:
-                hoster = await app.get_users(hoster_id)
-                hoster_name = hoster.first_name
-            except:
-                hoster_name = f"User {hoster_id}"
-            
-            raid_text += f"**💕 {hoster_name}'s Love Raids:**\n"
-            for target_id in raid_list:
-                try:
-                    target = await app.get_users(target_id)
-                    raid_text += f"  • {target.first_name} (`{target_id}`)\n"
-                    total_love_raids += 1
-                except:
-                    raid_text += f"  • Unknown User (`{target_id}`)\n"
-                    total_love_raids += 1
+            raid_text += f"**💕 User {hoster_id}'s Love Raids:** {len(raid_list)} targets\n"
+            total_love_raids += len(raid_list)
     
     raid_text += f"\n**📊 Total Stats:**\n"
     raid_text += f"• Normal Raids: `{total_raids}`\n"
@@ -577,7 +428,6 @@ async def bot_list_raids(_, message: Message):
 async def bot_clear_all_raids(_, message: Message):
     user_id = message.from_user.id
     
-    # Check if user is owner or sudo
     if user_id not in SUDO_USERS:
         return await message.reply_text("❌ **Sirf Owner/Sudo users ye command use kar sakte hain!**")
     
@@ -590,22 +440,11 @@ async def bot_clear_all_raids(_, message: Message):
         "• Ab koi reply raid active nahi hai"
     )
 
-# ========================= REGISTER USERBOT HANDLERS ========================= #
+# ==================== REGISTER USERBOT HANDLERS ====================
 
 async def register_userbot_handlers(user_client: Client, owner_id: int):
     """Register all userbot handlers for a hosted client"""
     
-    # Helper function specific to this client
-    async def client_eor(message: Message, text: str, **kwargs):
-        try:
-            if message.from_user.is_self:
-                return await message.edit_text(text, **kwargs)
-            return await message.reply_text(text, **kwargs)
-        except Exception as e:
-            print(f"Error in client_eor: {e}")
-            return None
-    
-    # HELP Command
     @user_client.on_message(filters.command("help", ".") & filters.me)
     async def help_cmd(_, message: Message):
         help_text = """
@@ -639,15 +478,14 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
 
 **Owner:** @Romeo_RJ_143
         """
-        await client_eor(message, help_text)
+        await eor(message, help_text)
     
-    # ALIVE Command
     @user_client.on_message(filters.command(["alive", "ping"], ".") & filters.me)
     async def alive_cmd(_, message: Message):
-        start = time()
+        start = time.time()
         uptime_sec = (datetime.utcnow() - START_TIME).total_seconds()
         uptime = await _human_time_duration(int(uptime_sec))
-        ping_ms = (time() - start) * 1000
+        ping_ms = (time.time() - start) * 1000
         
         caption = (
             f"**✨ Romeo Userbot is Alive!**\n\n"
@@ -659,95 +497,57 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
         )
         
         if message.command[0].lower() == "alive":
-            try:
-                await message.reply_photo(photo=ALIVE_PIC, caption=caption)
-                await message.delete()
-            except Exception as e:
-                await client_eor(message, caption)
+            await message.reply_photo(photo=ALIVE_PIC, caption=caption)
+            await message.delete()
         else:
-            await client_eor(message, caption)
+            await eor(message, caption)
     
-    # CLONE Command - FIXED
     @user_client.on_message(filters.command("clone", ".") & filters.me)
     async def clone_cmd(_, message: Message):
-        text = get_text(message)
-        my_id = (await user_client.get_me()).id
-        
-        # Check if already cloned
         if owner_id in ORIGINAL_PROFILES:
-            return await client_eor(message, 
+            return await eor(message, 
                 "⚠️ **Already cloned someone's profile!**\n"
                 "Use `.revert` first to restore original profile."
             )
         
-        if message.reply_to_message:
-            user = message.reply_to_message.from_user
-        elif text:
-            try:
-                user = await user_client.get_users(text)
-            except Exception as e:
-                return await client_eor(message, f"`❌ User not found! Error: {e}`")
-        else:
-            return await client_eor(message, "`Reply to user or give username/id!`")
+        text = get_text(message)
+        user = await get_user(message, text, user_client)
         
-        op = await client_eor(message, "`🔄 Cloning profile...`")
+        if not user:
+            return await eor(message, "`Reply to user or give username/id!`")
+        
+        op = await eor(message, "`🔄 Cloning profile...`")
         
         try:
-            # Step 1: Save original profile
             await op.edit("`📸 Saving your original profile...`")
             saved = await save_original_profile(user_client, owner_id)
             
             if not saved:
                 return await op.edit("`❌ Failed to save original profile!`")
             
-            # Step 2: Get target user's info
             await op.edit("`🎯 Getting target user's profile...`")
-            try:
-                target_chat = await user_client.get_chat(user.id)
-            except Exception as e:
-                await restore_original_profile(user_client, owner_id)
-                return await op.edit(f"`❌ Can't access target's profile! Error: {e}`")
+            target_chat = await user_client.get_chat(user.id)
             
-            # Step 3: Delete current photos
             await op.edit("`🗑️ Clearing current profile photos...`")
-            try:
-                async for photo in user_client.get_chat_photos("me"):
-                    await user_client.delete_profile_photos(photo.file_id)
-            except Exception as e:
-                print(f"Error deleting photos: {e}")
+            async for photo in user_client.get_chat_photos("me"):
+                await user_client.delete_profile_photos(photo.file_id)
             
-            # Step 4: Set new photos (up to 3)
             await op.edit("`📷 Setting new profile photos...`")
             photo_count = 0
-            try:
-                async for photo in user_client.get_chat_photos(user.id, limit=3):
-                    try:
-                        # Download photo to memory
-                        photo_bytes = await user_client.download_media(photo.file_id, in_memory=True)
-                        # Set as profile photo
-                        await user_client.set_profile_photo(photo=photo_bytes)
-                        photo_count += 1
-                    except Exception as e:
-                        print(f"Error setting photo: {e}")
-                        continue
-            except Exception as e:
-                print(f"Error accessing target photos: {e}")
+            async for photo in user_client.get_chat_photos(user.id, limit=3):
+                photo_bytes = await user_client.download_media(photo.file_id, in_memory=True)
+                await user_client.set_profile_photo(photo=photo_bytes)
+                photo_count += 1
             
-            # Step 5: Update bio and name
             await op.edit("`📝 Updating profile info...`")
-            try:
-                # Bio limit is 140 characters
-                new_bio = target_chat.bio[:140] if target_chat.bio else ""
-                
-                await user_client.update_profile(
-                    first_name=user.first_name or "User",
-                    last_name=user.last_name or "",
-                    bio=new_bio
-                )
-            except Exception as e:
-                print(f"Error updating profile info: {e}")
+            new_bio = target_chat.bio[:140] if target_chat.bio else ""
             
-            # Step 6: Try to update username (if target has username)
+            await user_client.update_profile(
+                first_name=user.first_name or "User",
+                last_name=user.last_name or "",
+                bio=new_bio
+            )
+            
             username_status = "Not Changed"
             if user.username:
                 await op.edit("`🔤 Trying to set unique username...`")
@@ -763,63 +563,50 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
                 f"**📝 Username:** `{username_status}`\n\n"
                 f"**💡 Use** `.revert` **to restore original profile**"
             )
-            
         except Exception as e:
-            # If error occurs, try to restore original profile
             if owner_id in ORIGINAL_PROFILES:
                 await restore_original_profile(user_client, owner_id)
             await op.edit(f"`❌ Error: {e}`")
     
-    # REVERT Command - FIXED
     @user_client.on_message(filters.command("revert", ".") & filters.me)
     async def revert_cmd(_, message: Message):
-        my_id = (await user_client.get_me()).id
-        
         if owner_id not in ORIGINAL_PROFILES:
-            return await client_eor(message,
+            return await eor(message,
                 "⚠️ **No saved profile data found!**\n"
                 "You haven't cloned any profile yet."
             )
         
-        op = await client_eor(message, "`🔄 Reverting to original profile...`")
+        op = await eor(message, "`🔄 Reverting to original profile...`")
         
-        try:
-            # Restore original profile
-            success = await restore_original_profile(user_client, owner_id)
-            
-            if success:
-                await op.edit(
-                    "**✅ Profile Successfully Reverted!**\n\n"
-                    "Your original profile has been restored.\n"
-                    "• Profile photos ✅\n"
-                    "• Name & Bio ✅\n"
-                    "• Username ✅"
-                )
-            else:
-                await op.edit("❌ **Failed to revert profile!**")
-                
-        except Exception as e:
-            await op.edit(f"`❌ Error while reverting: {e}`")
-
-    # SPAM Command - Reply Only (Optimized)
+        success = await restore_original_profile(user_client, owner_id)
+        
+        if success:
+            await op.edit(
+                "**✅ Profile Successfully Reverted!**\n\n"
+                "Your original profile has been restored.\n"
+                "• Profile photos ✅\n"
+                "• Name & Bio ✅\n"
+                "• Username ✅"
+            )
+        else:
+            await op.edit("❌ **Failed to revert profile!**")
+    
     @user_client.on_message(filters.command("spam", ".") & filters.me)
     async def spam_cmd(_, message: Message):
         if not message.reply_to_message:
-            return await client_eor(message, "`Reply to a message!`")
-    
-        # Get count
+            return await eor(message, "`Reply to a message!`")
+        
         try:
             count = int(message.command[1]) if len(message.command) > 1 else 10
-        except ValueError:
-            return await client_eor(message, "`Invalid count!`")
-    
+        except:
+            return await eor(message, "`Invalid count!`")
+        
         if count > 100 or count < 1:
-            return await client_eor(message, "`Count should be 1-100!`")
-    
+            return await eor(message, "`Count should be 1-100!`")
+        
         reply = message.reply_to_message
         await message.delete()
-    
-        # Spam based on reply type
+        
         for _ in range(count):
             try:
                 if reply.sticker:
@@ -836,19 +623,17 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
                     await user_client.send_message(message.chat.id, reply.text)
                 elif reply.caption:
                     await user_client.send_message(message.chat.id, reply.caption)
-                else:
-                    continue
-                    
+                
                 await asyncio.sleep(0.3)
             except FloodWait as e:
                 await asyncio.sleep(e.value)
-            except Exception as e:
-                print(f"Error in spam: {e}")
+            except:
                 continue
     
-    # RAID Commands with better error handling
-    @user_client.on_message(filters.command(["raid", "r"], ".") & filters.me)
+    # Combined RAID and LRAID handler
+    @user_client.on_message(filters.command(["raid", "r", "lraid", "lr"], ".") & filters.me)
     async def raid_cmd(_, message: Message):
+        is_love = message.command[0][0] == 'l'
         text = get_text(message)
         
         try:
@@ -860,308 +645,145 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
                 count = int(message.command[1]) if len(message.command) > 1 else 10
                 target_str = None
             else:
-                return await client_eor(message, "`Usage: .raid <count> <user/reply>`")
-                
-            if message.reply_to_message:
-                user = message.reply_to_message.from_user
-            elif target_str:
-                try:
-                    user = await user_client.get_users(target_str)
-                except Exception as e:
-                    return await client_eor(message, f"`❌ User not found! Error: {e}`")
-            else:
-                return await client_eor(message, "`Reply to user or give username/id!`")
-                
-            if user.id in SUDO_USERS or user.id in VERIFIED_USERS:
-                return await client_eor(message, f"`Can't raid {user.first_name}!`")
-                
-            await message.delete()
-            for _ in range(count):
-                try:
-                    await user_client.send_message(
-                        message.chat.id, 
-                        f"{user.mention} {random.choice(RAID)}"
-                    )
-                    await asyncio.sleep(0.3)
-                except Exception as e:
-                    print(f"Error in raid: {e}")
-                    continue
-                
-        except Exception as e:
-            await client_eor(message, f"`Error: {e}`")
-    
-    # LOVE RAID Command with better error handling
-    @user_client.on_message(filters.command(["lraid", "lr"], ".") & filters.me)
-    async def lraid_cmd(_, message: Message):
-        text = get_text(message)
-        
-        try:
-            if text:
-                parts = text.split(None, 1)
-                count = int(parts[0])
-                target_str = parts[1] if len(parts) > 1 else None
-            elif message.reply_to_message:
-                count = int(message.command[1]) if len(message.command) > 1 else 10
-                target_str = None
-            else:
-                return await client_eor(message, "`Usage: .lraid <count> <user/reply>`")
-                
-            if message.reply_to_message:
-                user = message.reply_to_message.from_user
-            elif target_str:
-                try:
-                    user = await user_client.get_users(target_str)
-                except Exception as e:
-                    return await client_eor(message, f"`❌ User not found! Error: {e}`")
-            else:
-                return await client_eor(message, "`Reply to user or give username/id!`")
-                
-            await message.delete()
-            for _ in range(count):
-                try:
-                    await user_client.send_message(
-                        message.chat.id, 
-                        f"{user.mention} {random.choice(LOVE)}"
-                    )
-                    await asyncio.sleep(0.3)
-                except Exception as e:
-                    print(f"Error in love raid: {e}")
-                    continue
-                
-        except Exception as e:
-            await client_eor(message, f"`Error: {e}`")
-    
-    # PORNSPAM Command
-    @user_client.on_message(filters.command(["pornspam", "psm"], ".") & filters.me)
-    async def pornspam_cmd(_, message: Message):
-        if message.chat.id in GROUP:
-            return await client_eor(message, "`Can't spam in this group!`")
+                return await eor(message, f"`Usage: .{'l' if is_love else ''}raid <count> <user>`")
             
+            if message.reply_to_message:
+                user = message.reply_to_message.from_user
+            elif target_str:
+                user = await user_client.get_users(target_str)
+            else:
+                return await eor(message, "`Reply to user or give username/id!`")
+            
+            if user.id in SUDO_USERS or user.id in VERIFIED_USERS:
+                return await eor(message, f"`Can't raid {user.first_name}!`")
+            
+            await message.delete()
+            
+            for _ in range(count):
+                raid_msg = random.choice(LOVE if is_love else RAID)
+                await user_client.send_message(message.chat.id, f"{user.mention} {raid_msg}")
+                await asyncio.sleep(0.3)
+        except Exception as e:
+            await eor(message, f"`Error: {e}`")
+    
+    # Combined PORNSPAM and HANG handler
+    @user_client.on_message(filters.command(["pornspam", "psm", "hang"], ".") & filters.me)
+    async def spam_cmds(_, message: Message):
+        if message.chat.id in GROUP:
+            return await eor(message, "`Can't spam in this group!`")
+        
         try:
             count = int(message.command[1]) if len(message.command) > 1 else 5
         except:
-            return await client_eor(message, "`Usage: .pornspam <count>`")
-            
+            return await eor(message, f"`Usage: .{message.command[0]} <count>`")
+        
         await message.delete()
+        is_hang = message.command[0] == "hang"
+        
         for _ in range(count):
             try:
-                await user_client.send_video(message.chat.id, video=random.choice(PORM))
+                if is_hang:
+                    await user_client.send_message(message.chat.id, "⃟" * 1000)
+                else:
+                    await user_client.send_video(message.chat.id, video=random.choice(PORM))
                 await asyncio.sleep(0.5)
             except FloodWait as e:
                 await asyncio.sleep(e.value)
-            except Exception as e:
-                print(f"Error in pornspam: {e}")
+            except:
                 pass
     
-    # HANG Command
-    @user_client.on_message(filters.command("hang", ".") & filters.me)
-    async def hang_cmd(_, message: Message):
-        if message.chat.id in GROUP:
-            return await client_eor(message, "`Can't spam in this group!`")
-            
-        try:
-            count = int(message.command[1]) if len(message.command) > 1 else 5
-        except:
-            return await client_eor(message, "`Usage: .hang <count>`")
-            
-        await message.delete()
-        hang_text = "⃟" * 1000
-        for _ in range(count):
-            try:
-                await user_client.send_message(message.chat.id, hang_text)
-                await asyncio.sleep(0.5)
-            except Exception as e:
-                print(f"Error in hang: {e}")
-                continue
-    
-    # TAG ALL Command
     @user_client.on_message(filters.command("all", ".") & filters.me)
     async def tagall_cmd(_, message: Message):
-        chat_id = message.chat.id
         text = get_text(message) or "Hello Everyone!"
-        
         await message.delete()
         
         members_text = ""
         count = 0
         
-        try:
-            async for member in user_client.get_chat_members(chat_id):
-                if member.user.is_bot or member.user.is_deleted:
-                    continue
-                    
-                members_text += f"[{member.user.first_name}](tg://user?id={member.user.id}) "
-                count += 1
-                
-                if count == 5:
-                    await user_client.send_message(chat_id, f"{text}\n\n{members_text}")
-                    members_text = ""
-                    count = 0
-                    await asyncio.sleep(2)
-                    
-            if members_text:
-                await user_client.send_message(chat_id, f"{text}\n\n{members_text}")
-        except Exception as e:
-            print(f"Error in tagall: {e}")
-
-    # CANCEL Command for tag all
+        async for member in user_client.get_chat_members(message.chat.id):
+            if member.user.is_bot or member.user.is_deleted:
+                continue
+            
+            members_text += f"[{member.user.first_name}](tg://user?id={member.user.id}) "
+            count += 1
+            
+            if count == 5:
+                await user_client.send_message(message.chat.id, f"{text}\n\n{members_text}")
+                members_text = ""
+                count = 0
+                await asyncio.sleep(2)
+        
+        if members_text:
+            await user_client.send_message(message.chat.id, f"{text}\n\n{members_text}")
+    
     @user_client.on_message(filters.command("cancel", ".") & filters.me)
     async def cancel_cmd(_, message: Message):
         global spam_chats
         if message.chat.id in spam_chats:
             spam_chats.remove(message.chat.id)
-            await client_eor(message, "`✅ Tagging cancelled!`")
+            await eor(message, "`✅ Tagging cancelled!`")
         else:
-            await client_eor(message, "`❌ No active tagging in this chat!`")
+            await eor(message, "`❌ No active tagging in this chat!`")
     
-    # REPLY RAID ACTIVATE - For Hosters
-    @user_client.on_message(filters.command("rr", ".") & filters.me)
-    async def replyraid_activate(_, message: Message):
+    # Reply Raid commands
+    @user_client.on_message(filters.command(["rr", "rlr"], ".") & filters.me)
+    async def activate_raid(_, message: Message):
+        is_love = message.command[0] == "rlr"
         text = get_text(message)
         user = await get_user(message, text, user_client)
         
         if not user:
-            return await client_eor(message, "`Reply to user or give username/id!`")
+            return await eor(message, "`Reply to user or give username/id!`")
         
         if user.id in SUDO_USERS or user.id in VERIFIED_USERS:
-            return await client_eor(message, f"`Can't raid sudo/verified users!`")
+            return await eor(message, f"`Can't raid sudo/verified users!`")
         
-        # Initialize list if not exists
-        if owner_id not in ACTIVATE_RLIST:
-            ACTIVATE_RLIST[owner_id] = []
+        raid_list = ACTIVATE_LLIST if is_love else ACTIVATE_RLIST
         
-        if user.id in ACTIVATE_RLIST[owner_id]:
-            return await client_eor(message, f"`Reply raid already activated for {user.first_name}!`")
+        if owner_id not in raid_list:
+            raid_list[owner_id] = []
         
-        ACTIVATE_RLIST[owner_id].append(user.id)
-        await client_eor(message, f"**✅ Reply Raid Activated!**\n**User:** {user.mention}")
+        if user.id in raid_list[owner_id]:
+            return await eor(message, f"`Already activated for {user.first_name}!`")
+        
+        raid_list[owner_id].append(user.id)
+        
+        emoji = "💕" if is_love else "✅"
+        raid_type = "Love Reply" if is_love else "Reply"
+        await eor(message, f"**{emoji} {raid_type} Raid Activated!**\n**User:** {user.mention}")
     
-    # REPLY RAID DEACTIVATE
-    @user_client.on_message(filters.command("drr", ".") & filters.me)
-    async def replyraid_deactivate(_, message: Message):
+    @user_client.on_message(filters.command(["drr", "drlr"], ".") & filters.me)
+    async def deactivate_raid(_, message: Message):
+        is_love = message.command[0] == "drlr"
         text = get_text(message)
         user = await get_user(message, text, user_client)
         
         if not user:
-            return await client_eor(message, "`Reply to user or give username/id!`")
+            return await eor(message, "`Reply to user or give username/id!`")
         
-        # Get sender's ID
+        raid_list = ACTIVATE_LLIST if is_love else ACTIVATE_RLIST
         sender = await user_client.get_me()
-        sender_id = sender.id
         
-        # Check if sender is owner or sudo
-        if sender_id in SUDO_USERS:
-            # Owner/Sudo can deactivate any hoster's raid
+        if sender.id in SUDO_USERS:
             deactivated = False
-            deactivated_from = []
-            
-            # Check all hosters' raid lists
-            for hoster_id, raid_list in list(ACTIVATE_RLIST.items()):
-                if user.id in raid_list:
-                    ACTIVATE_RLIST[hoster_id].remove(user.id)
+            for hoster_id, raids in list(raid_list.items()):
+                if user.id in raids:
+                    raid_list[hoster_id].remove(user.id)
                     deactivated = True
-                    try:
-                        # Try to get hoster name
-                        if hoster_id == owner_id:
-                            hoster_name = "Your"
-                        elif hoster_id in HOSTED_CLIENTS:
-                            hoster_client = HOSTED_CLIENTS[hoster_id]
-                            hoster_info = await hoster_client.get_me()
-                            hoster_name = f"{hoster_info.first_name}'s"
-                        else:
-                            hoster_name = f"User {hoster_id}'s"
-                    except:
-                        hoster_name = f"User {hoster_id}'s"
-                    deactivated_from.append(hoster_name)
             
             if deactivated:
-                await client_eor(message, 
-                    f"**❌ Reply Raid Deactivated by Admin!**\n"
-                    f"**Target User:** {user.mention}\n"
-                    f"**Removed from:** {', '.join(deactivated_from)} raid list")
+                raid_type = "Love Reply" if is_love else "Reply"
+                await eor(message, f"**❌ {raid_type} Raid Deactivated by Admin!**\n**Target:** {user.mention}")
             else:
-                await client_eor(message, f"`Reply raid is not activated for {user.first_name}!`")
+                await eor(message, f"`Not activated for {user.first_name}!`")
         else:
-            # Normal user can only deactivate their own raids
-            if owner_id not in ACTIVATE_RLIST or user.id not in ACTIVATE_RLIST[owner_id]:
-                return await client_eor(message, f"`Reply raid is not activated for {user.first_name}!`")
+            if owner_id not in raid_list or user.id not in raid_list[owner_id]:
+                return await eor(message, f"`Not activated for {user.first_name}!`")
             
-            ACTIVATE_RLIST[owner_id].remove(user.id)
-            await client_eor(message, f"**❌ Reply Raid Deactivated!**\n**User:** {user.mention}")
+            raid_list[owner_id].remove(user.id)
+            raid_type = "Love Reply" if is_love else "Reply"
+            await eor(message, f"**❌ {raid_type} Raid Deactivated!**\n**User:** {user.mention}")
     
-    # LOVE REPLY RAID ACTIVATE - For Hosters
-    @user_client.on_message(filters.command("rlr", ".") & filters.me)
-    async def lovereplyraid_activate(_, message: Message):
-        text = get_text(message)
-        user = await get_user(message, text, user_client)
-        
-        if not user:
-            return await client_eor(message, "`Reply to user or give username/id!`")
-        
-        # Initialize list if not exists
-        if owner_id not in ACTIVATE_LLIST:
-            ACTIVATE_LLIST[owner_id] = []
-        
-        if user.id in ACTIVATE_LLIST[owner_id]:
-            return await client_eor(message, f"`Love reply raid already activated for {user.first_name}!`")
-        
-        ACTIVATE_LLIST[owner_id].append(user.id)
-        await client_eor(message, f"**💕 Love Reply Raid Activated!**\n**User:** {user.mention}")
-    
-    # LOVE REPLY RAID DEACTIVATE
-    @user_client.on_message(filters.command("drlr", ".") & filters.me)
-    async def lovereplyraid_deactivate(_, message: Message):
-        text = get_text(message)
-        user = await get_user(message, text, user_client)
-        
-        if not user:
-            return await client_eor(message, "`Reply to user or give username/id!`")
-        
-        # Get sender's ID
-        sender = await user_client.get_me()
-        sender_id = sender.id
-        
-        # Check if sender is owner or sudo
-        if sender_id in SUDO_USERS:
-            # Owner/Sudo can deactivate any hoster's love raid
-            deactivated = False
-            deactivated_from = []
-            
-            # Check all hosters' love raid lists
-            for hoster_id, raid_list in list(ACTIVATE_LLIST.items()):
-                if user.id in raid_list:
-                    ACTIVATE_LLIST[hoster_id].remove(user.id)
-                    deactivated = True
-                    try:
-                        # Try to get hoster name
-                        if hoster_id == owner_id:
-                            hoster_name = "Your"
-                        elif hoster_id in HOSTED_CLIENTS:
-                            hoster_client = HOSTED_CLIENTS[hoster_id]
-                            hoster_info = await hoster_client.get_me()
-                            hoster_name = f"{hoster_info.first_name}'s"
-                        else:
-                            hoster_name = f"User {hoster_id}'s"
-                    except:
-                        hoster_name = f"User {hoster_id}'s"
-                    deactivated_from.append(hoster_name)
-            
-            if deactivated:
-                await client_eor(message,
-                    f"**❌ Love Reply Raid Deactivated by Admin!**\n"
-                    f"**Target User:** {user.mention}\n"
-                    f"**Removed from:** {', '.join(deactivated_from)} raid list")
-            else:
-                await client_eor(message, f"`Love reply raid is not activated for {user.first_name}!`")
-        else:
-            # Normal user can only deactivate their own raids
-            if owner_id not in ACTIVATE_LLIST or user.id not in ACTIVATE_LLIST[owner_id]:
-                return await client_eor(message, f"`Love reply raid is not activated for {user.first_name}!`")
-            
-            ACTIVATE_LLIST[owner_id].remove(user.id)
-            await client_eor(message, f"**❌ Love Reply Raid Deactivated!**\n**User:** {user.mention}")
-    
-    # AUTO REPLY RAID HANDLER
     @user_client.on_message(filters.incoming & ~filters.bot & ~filters.service)
     async def auto_reply_raid(_, message: Message):
         if not message.from_user:
@@ -1169,33 +791,27 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
         
         user_id = message.from_user.id
         
-        # Check for normal reply raid for this hoster
         if owner_id in ACTIVATE_RLIST and user_id in ACTIVATE_RLIST[owner_id]:
             try:
-                raid_msg = random.choice(RAID)
                 await user_client.send_message(
                     message.chat.id,
-                    f"{message.from_user.mention} {raid_msg}",
+                    f"{message.from_user.mention} {random.choice(RAID)}",
                     reply_to_message_id=message.id
                 )
-            except Exception as e:
-                print(f"Error in auto reply raid: {e}")
+            except:
                 pass
         
-        # Check for love reply raid for this hoster
         elif owner_id in ACTIVATE_LLIST and user_id in ACTIVATE_LLIST[owner_id]:
             try:
-                love_msg = random.choice(LOVE)
                 await user_client.send_message(
                     message.chat.id,
-                    f"{message.from_user.mention} {love_msg}",
+                    f"{message.from_user.mention} {random.choice(LOVE)}",
                     reply_to_message_id=message.id
                 )
-            except Exception as e:
-                print(f"Error in auto love reply raid: {e}")
+            except:
                 pass
 
-# ================================== MAIN ================================== #
+# ==================== MAIN ====================
 
 async def start_bots():
     print("INFO: Starting Hoster Bot...")
@@ -1207,10 +823,8 @@ async def start_bots():
     me = await client.get_me()
     print(f"INFO: Owner's Userbot started as {me.first_name} ({me.id})")
     
-    # Register handlers for owner's userbot
     await register_userbot_handlers(client, OWNER_ID)
     
-    # Initialize raid lists for owner
     if OWNER_ID not in ACTIVATE_RLIST:
         ACTIVATE_RLIST[OWNER_ID] = []
     if OWNER_ID not in ACTIVATE_LLIST:
