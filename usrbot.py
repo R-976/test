@@ -50,8 +50,8 @@ LOVE = [
     "कुछ ऐसे हस्दे ज़िन्दगी मैं होते है🤔🤔, के इंसान तो बच जाता है मगर ज़िंदा नहीं रहता😂💓",
 ]
 RAID = [
-    "𝐌𝐀𝐃𝐀𝐑𝐂𝐇𝐎𝐃", "BHOSDIKE", "LAAAWEEE KE BAAAAAL",
-    "TERA MAA MERI FAN", "TERI SEXY BAHEN KI CHUT OP",
+    "A", "B", "C",
+    "D", "E", "F",
 ]
 PORM = [
     "https://telegra.ph/file/9bcc076fd81dfe3feb291.mp4",
