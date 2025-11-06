@@ -33,8 +33,8 @@ SUDO_USERS.append(OWNER_ID)
 
 # State lists
 spam_chats = []
-ACTIVATE_RLIST = []  # Reply Raid
-ACTIVATE_LLIST = []  # Reply Love Raid
+ACTIVATE_RLIST = {}  # {hoster_id: [user_ids]}  - Reply Raid per hoster
+ACTIVATE_LLIST = {}  # {hoster_id: [user_ids]}  - Love Reply Raid per hoster
 
 # Temporary hosted clients dictionary
 HOSTED_CLIENTS = {}  # {user_id: client_instance}
@@ -233,6 +233,7 @@ async def restore_original_profile(user_client: Client, user_id: int):
 
 # ================================== HOSTER BOT COMMANDS ================================ #
 
+# Universal Commands - Sab use kar sakte hain
 @app.on_message(filters.command("start", ["/", "!", "."]) & filters.private)
 async def start_hoster_command(_, message: Message):
     caption = (
@@ -244,6 +245,10 @@ async def start_hoster_command(_, message: Message):
         "• `/host <SESSION_STRING>` - Apna userbot activate karo\n"
         "• `/stop` - Apna userbot deactivate karo\n"
         "• `/status` - Check karo ka aapka userbot chal raha hai ya nahi\n\n"
+        "**Only Owner Commands :**\n"
+        "• `/restart` - Restart bot\n"
+        "• `/listraid` - Show all active raids\n"
+        "• `/clearraid` - Clear all raids\n\n"
         "**Owner:** @Romeo_RJ_143"
     )
     buttons = [
@@ -295,6 +300,12 @@ async def host_client_command(_, message: Message):
         # Store client in dictionary
         HOSTED_CLIENTS[user_id] = new_client
         
+        # Initialize raid lists for this hoster
+        if user_id not in ACTIVATE_RLIST:
+            ACTIVATE_RLIST[user_id] = []
+        if user_id not in ACTIVATE_LLIST:
+            ACTIVATE_LLIST[user_id] = []
+        
         # Register all userbot handlers for this client
         await register_userbot_handlers(new_client, user_id)
         
@@ -332,6 +343,12 @@ async def stop_client_command(_, message: Message):
         await HOSTED_CLIENTS[user_id].stop()
         del HOSTED_CLIENTS[user_id]
         
+        # Clean up raid lists
+        if user_id in ACTIVATE_RLIST:
+            del ACTIVATE_RLIST[user_id]
+        if user_id in ACTIVATE_LLIST:
+            del ACTIVATE_LLIST[user_id]
+        
         # Clean up any saved profile data
         if user_id in ORIGINAL_PROFILES:
             del ORIGINAL_PROFILES[user_id]
@@ -359,17 +376,24 @@ async def status_command(_, message: Message):
         uptime_sec = (datetime.utcnow() - START_TIME).total_seconds()
         uptime = await _human_time_duration(int(uptime_sec))
         
+        # Count active raids for this user
+        raid_count = len(ACTIVATE_RLIST.get(user_id, []))
+        love_raid_count = len(ACTIVATE_LLIST.get(user_id, []))
+        
         await message.reply_text(
             f"**✅ Aapka Userbot Active Hai!**\n\n"
             f"**👤 Account:** {me.first_name}\n"
             f"**🆔 ID:** `{me.id}`\n"
             f"**⏱️ Uptime:** `{uptime}`\n"
             f"**📊 Total Hosted Users:** `{len(HOSTED_CLIENTS)}`\n"
-            f"**🔄 Profile Cloned:** `{'Yes' if user_id in ORIGINAL_PROFILES else 'No'}`"
+            f"**🔄 Profile Cloned:** `{'Yes' if user_id in ORIGINAL_PROFILES else 'No'}`\n"
+            f"**🔥 Active Raids:** `{raid_count}`\n"
+            f"**💕 Active Love Raids:** `{love_raid_count}`"
         )
     except Exception as e:
         await message.reply_text(f"❌ **Error:** `{e}`")
 
+# Admin Commands - Sirf Owner aur Sudo users
 @app.on_message(filters.command("restart", ["/", "!"]) & filters.private)
 async def restart_command(_, message: Message):
     user_id = message.from_user.id
@@ -389,6 +413,8 @@ async def restart_command(_, message: Message):
     
     HOSTED_CLIENTS.clear()
     ORIGINAL_PROFILES.clear()
+    ACTIVATE_RLIST.clear()
+    ACTIVATE_LLIST.clear()
     
     await op.edit(
         "✅ **Bot restarted successfully!**\n"
@@ -398,6 +424,80 @@ async def restart_command(_, message: Message):
     
     # Restart the bot (this will exit the script, you need process manager to restart it)
     os.execl(sys.executable, sys.executable, *sys.argv)
+
+@app.on_message(filters.command("listraid", ["/", "!"]) & filters.private)
+async def bot_list_raids(_, message: Message):
+    user_id = message.from_user.id
+    
+    # Check if user is owner or sudo
+    if user_id not in SUDO_USERS:
+        return await message.reply_text("❌ **Sirf Owner/Sudo users ye command use kar sakte hain!**")
+    
+    raid_text = "**📋 All Active Reply Raids:**\n\n"
+    
+    # List all raids from all hosters
+    total_raids = 0
+    total_love_raids = 0
+    
+    for hoster_id, raid_list in ACTIVATE_RLIST.items():
+        if raid_list:
+            try:
+                hoster = await app.get_users(hoster_id)
+                hoster_name = hoster.first_name
+            except:
+                hoster_name = f"User {hoster_id}"
+            
+            raid_text += f"**🔥 {hoster_name}'s Raids:**\n"
+            for target_id in raid_list:
+                try:
+                    target = await app.get_users(target_id)
+                    raid_text += f"  • {target.first_name} (`{target_id}`)\n"
+                    total_raids += 1
+                except:
+                    raid_text += f"  • Unknown User (`{target_id}`)\n"
+                    total_raids += 1
+    
+    for hoster_id, raid_list in ACTIVATE_LLIST.items():
+        if raid_list:
+            try:
+                hoster = await app.get_users(hoster_id)
+                hoster_name = hoster.first_name
+            except:
+                hoster_name = f"User {hoster_id}"
+            
+            raid_text += f"**💕 {hoster_name}'s Love Raids:**\n"
+            for target_id in raid_list:
+                try:
+                    target = await app.get_users(target_id)
+                    raid_text += f"  • {target.first_name} (`{target_id}`)\n"
+                    total_love_raids += 1
+                except:
+                    raid_text += f"  • Unknown User (`{target_id}`)\n"
+                    total_love_raids += 1
+    
+    raid_text += f"\n**📊 Total Stats:**\n"
+    raid_text += f"• Normal Raids: `{total_raids}`\n"
+    raid_text += f"• Love Raids: `{total_love_raids}`\n"
+    raid_text += f"• Active Hosters: `{len(HOSTED_CLIENTS)}`"
+    
+    await message.reply_text(raid_text)
+
+@app.on_message(filters.command("clearraid", ["/", "!"]) & filters.private)
+async def bot_clear_all_raids(_, message: Message):
+    user_id = message.from_user.id
+    
+    # Check if user is owner or sudo
+    if user_id not in SUDO_USERS:
+        return await message.reply_text("❌ **Sirf Owner/Sudo users ye command use kar sakte hain!**")
+    
+    ACTIVATE_RLIST.clear()
+    ACTIVATE_LLIST.clear()
+    
+    await message.reply_text(
+        "**✅ All Reply Raids Cleared!**\n\n"
+        "• Sabhi hosters ke raids clear kar diye gaye hain\n"
+        "• Ab koi reply raid active nahi hai"
+    )
 
 # ========================= REGISTER USERBOT HANDLERS ========================= #
 
@@ -442,8 +542,6 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
 • `.drr <user>` - Deactivate reply raid
 • `.rlr <user>` - Activate love reply raid
 • `.drlr <user>` - Deactivate love reply raid
-• `.listraid` - Show active raids
-• `.clearraid` - Clear all raids
 
 **Owner:** @Romeo_RJ_143
         """
@@ -731,7 +829,7 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
         if members_text:
             await user_client.send_message(chat_id, f"{text}\n\n{members_text}")
     
-    # REPLY RAID ACTIVATE
+    # REPLY RAID ACTIVATE - For Hosters
     @user_client.on_message(filters.command("rr", ".") & filters.me)
     async def replyraid_activate(_, message: Message):
         text = get_text(message)
@@ -743,13 +841,17 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
         if user.id in SUDO_USERS or user.id in VERIFIED_USERS:
             return await client_eor(message, f"`Can't raid sudo/verified users!`")
         
-        if user.id in ACTIVATE_RLIST:
+        # Initialize list if not exists
+        if owner_id not in ACTIVATE_RLIST:
+            ACTIVATE_RLIST[owner_id] = []
+        
+        if user.id in ACTIVATE_RLIST[owner_id]:
             return await client_eor(message, f"`Reply raid already activated for {user.first_name}!`")
         
-        ACTIVATE_RLIST.append(user.id)
+        ACTIVATE_RLIST[owner_id].append(user.id)
         await client_eor(message, f"**✅ Reply Raid Activated!**\n**User:** {user.mention}")
     
-    # REPLY RAID DEACTIVATE
+    # REPLY RAID DEACTIVATE - For Hosters
     @user_client.on_message(filters.command("drr", ".") & filters.me)
     async def replyraid_deactivate(_, message: Message):
         text = get_text(message)
@@ -758,13 +860,13 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
         if not user:
             return await client_eor(message, "`Reply to user or give username/id!`")
         
-        if user.id not in ACTIVATE_RLIST:
+        if owner_id not in ACTIVATE_RLIST or user.id not in ACTIVATE_RLIST[owner_id]:
             return await client_eor(message, f"`Reply raid is not activated for {user.first_name}!`")
         
-        ACTIVATE_RLIST.remove(user.id)
+        ACTIVATE_RLIST[owner_id].remove(user.id)
         await client_eor(message, f"**❌ Reply Raid Deactivated!**\n**User:** {user.mention}")
     
-    # LOVE REPLY RAID ACTIVATE
+    # LOVE REPLY RAID ACTIVATE - For Hosters
     @user_client.on_message(filters.command("rlr", ".") & filters.me)
     async def lovereplyraid_activate(_, message: Message):
         text = get_text(message)
@@ -773,13 +875,17 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
         if not user:
             return await client_eor(message, "`Reply to user or give username/id!`")
         
-        if user.id in ACTIVATE_LLIST:
+        # Initialize list if not exists
+        if owner_id not in ACTIVATE_LLIST:
+            ACTIVATE_LLIST[owner_id] = []
+        
+        if user.id in ACTIVATE_LLIST[owner_id]:
             return await client_eor(message, f"`Love reply raid already activated for {user.first_name}!`")
         
-        ACTIVATE_LLIST.append(user.id)
+        ACTIVATE_LLIST[owner_id].append(user.id)
         await client_eor(message, f"**💕 Love Reply Raid Activated!**\n**User:** {user.mention}")
     
-    # LOVE REPLY RAID DEACTIVATE
+    # LOVE REPLY RAID DEACTIVATE - For Hosters
     @user_client.on_message(filters.command("drlr", ".") & filters.me)
     async def lovereplyraid_deactivate(_, message: Message):
         text = get_text(message)
@@ -788,10 +894,10 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
         if not user:
             return await client_eor(message, "`Reply to user or give username/id!`")
         
-        if user.id not in ACTIVATE_LLIST:
+        if owner_id not in ACTIVATE_LLIST or user.id not in ACTIVATE_LLIST[owner_id]:
             return await client_eor(message, f"`Love reply raid is not activated for {user.first_name}!`")
         
-        ACTIVATE_LLIST.remove(user.id)
+        ACTIVATE_LLIST[owner_id].remove(user.id)
         await client_eor(message, f"**❌ Love Reply Raid Deactivated!**\n**User:** {user.mention}")
     
     # AUTO REPLY RAID HANDLER
@@ -802,8 +908,8 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
         
         user_id = message.from_user.id
         
-        # Check for normal reply raid
-        if user_id in ACTIVATE_RLIST:
+        # Check for normal reply raid for this hoster
+        if owner_id in ACTIVATE_RLIST and user_id in ACTIVATE_RLIST[owner_id]:
             try:
                 raid_msg = random.choice(RAID)
                 await user_client.send_message(
@@ -814,8 +920,8 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
             except:
                 pass
         
-        # Check for love reply raid
-        elif user_id in ACTIVATE_LLIST:
+        # Check for love reply raid for this hoster
+        elif owner_id in ACTIVATE_LLIST and user_id in ACTIVATE_LLIST[owner_id]:
             try:
                 love_msg = random.choice(LOVE)
                 await user_client.send_message(
@@ -825,44 +931,6 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
                 )
             except:
                 pass
-    
-    # LIST REPLY RAIDS
-    @user_client.on_message(filters.command("listraid", ".") & filters.me)
-    async def list_raids(_, message: Message):
-        raid_text = "**📋 Active Reply Raids:**\n\n"
-        
-        if ACTIVATE_RLIST:
-            raid_text += "**🔥 Normal Reply Raids:**\n"
-            for user_id in ACTIVATE_RLIST:
-                try:
-                    user = await user_client.get_users(user_id)
-                    raid_text += f"• {user.mention} (`{user_id}`)\n"
-                except:
-                    raid_text += f"• Unknown User (`{user_id}`)\n"
-        else:
-            raid_text += "**🔥 Normal Reply Raids:** None\n"
-        
-        raid_text += "\n"
-        
-        if ACTIVATE_LLIST:
-            raid_text += "**💕 Love Reply Raids:**\n"
-            for user_id in ACTIVATE_LLIST:
-                try:
-                    user = await user_client.get_users(user_id)
-                    raid_text += f"• {user.mention} (`{user_id}`)\n"
-                except:
-                    raid_text += f"• Unknown User (`{user_id}`)\n"
-        else:
-            raid_text += "**💕 Love Reply Raids:** None\n"
-        
-        await client_eor(message, raid_text)
-    
-    # CLEAR ALL RAIDS
-    @user_client.on_message(filters.command("clearraid", ".") & filters.me)
-    async def clear_all_raids(_, message: Message):
-        ACTIVATE_RLIST.clear()
-        ACTIVATE_LLIST.clear()
-        await client_eor(message, "**✅ All Reply Raids Cleared!**")
 
 # ================================== MAIN ================================== #
 
@@ -878,6 +946,12 @@ async def start_bots():
     
     # Register handlers for owner's userbot
     await register_userbot_handlers(client, OWNER_ID)
+    
+    # Initialize raid lists for owner
+    if OWNER_ID not in ACTIVATE_RLIST:
+        ACTIVATE_RLIST[OWNER_ID] = []
+    if OWNER_ID not in ACTIVATE_LLIST:
+        ACTIVATE_LLIST[OWNER_ID] = []
     
     print("========================================")
     print("   Romeo Userbot System Ready!   ")
