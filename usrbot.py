@@ -8,12 +8,9 @@ from time import time
 from datetime import datetime
 from platform import python_version
 from os import getenv
-
 from pyrogram import Client, filters, idle, enums, __version__
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
 from pyrogram.errors import FloodWait, UsernameNotOccupied, UsernameOccupied
-
-from PIL import Image
 
 # ==================== FLASK SERVER FOR RENDER ====================
 import os
@@ -574,12 +571,11 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
 • `.ping` - Check response time  
 • `.help` - Show this message
 
-**Spam:**
+**Spam Commands:**
+• `.spam [count] [text]`  or Reply to any media - spam text + media
 • `.raid <count> <user>` - Raid a user
 • `.lraid <count> <user>` - Love raid
-• `.dmraid <count> <user>` - DM raid
-• `.pornspam <count>` - Spam adult content
-• `.sspam <count>` - Spam stickers
+• `.pornspam <count>` - Adult content spam
 • `.hang <count>` - Hang messages
 
 **Profile:**
@@ -739,6 +735,51 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
                 
         except Exception as e:
             await op.edit(f"`❌ Error while reverting: {e}`")
+
+    # SPAM 
+    # SIMPLE SPAM Command - Reply Only (Optimized)
+    @user_client.on_message(filters.command("spam", ".") & filters.me)
+    async def spam_cmd(_, message: Message):
+        if not message.reply_to_message:
+            return await client_eor(message, "`Reply to a message!`")
+    
+        # Get count
+        try:
+            count = int(message.command[1]) if len(message.command) > 1 else 10
+        except ValueError:
+            return await client_eor(message, "`Invalid count!`")
+    
+        if count > 100 or count < 1:
+            return await client_eor(message, "`Count should be 1-100!`")
+    
+        reply = message.reply_to_message
+        await message.delete()
+    
+        # Spam based on reply type
+        for _ in range(count):
+            try:
+                if reply.sticker:
+                    await user_client.send_sticker(message.chat.id, reply.sticker.file_id)
+                elif reply.animation:
+                    await user_client.send_animation(message.chat.id, reply.animation.file_id)
+                elif reply.photo:
+                    await user_client.send_photo(message.chat.id, reply.photo.file_id)
+                elif reply.video:
+                    await user_client.send_video(message.chat.id, reply.video.file_id)
+                elif reply.voice:
+                    await user_client.send_voice(message.chat.id, reply.voice.file_id)
+                elif reply.text:
+                    await user_client.send_message(message.chat.id, reply.text)
+                elif reply.caption:
+                    await user_client.send_message(message.chat.id, reply.caption)
+                else:
+                    continue
+                    
+                await asyncio.sleep(0.3)
+            except FloodWait as e:
+                await asyncio.sleep(e.value)
+            except:
+                continue
     
     # RAID Commands
     @user_client.on_message(filters.command(["raid", "r"], ".") & filters.me)
