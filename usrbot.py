@@ -851,7 +851,7 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
         ACTIVATE_RLIST[owner_id].append(user.id)
         await client_eor(message, f"**✅ Reply Raid Activated!**\n**User:** {user.mention}")
     
-    # REPLY RAID DEACTIVATE - For Hosters
+    # REPLY RAID DEACTIVATE - Modified to support Owner/Sudo control
     @user_client.on_message(filters.command("drr", ".") & filters.me)
     async def replyraid_deactivate(_, message: Message):
         text = get_text(message)
@@ -860,11 +860,49 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
         if not user:
             return await client_eor(message, "`Reply to user or give username/id!`")
         
-        if owner_id not in ACTIVATE_RLIST or user.id not in ACTIVATE_RLIST[owner_id]:
-            return await client_eor(message, f"`Reply raid is not activated for {user.first_name}!`")
+        # Get sender's ID
+        sender = await user_client.get_me()
+        sender_id = sender.id
         
-        ACTIVATE_RLIST[owner_id].remove(user.id)
-        await client_eor(message, f"**❌ Reply Raid Deactivated!**\n**User:** {user.mention}")
+        # Check if sender is owner or sudo
+        if sender_id in SUDO_USERS:
+            # Owner/Sudo can deactivate any hoster's raid
+            deactivated = False
+            deactivated_from = []
+            
+            # Check all hosters' raid lists
+            for hoster_id, raid_list in list(ACTIVATE_RLIST.items()):
+                if user.id in raid_list:
+                    ACTIVATE_RLIST[hoster_id].remove(user.id)
+                    deactivated = True
+                    try:
+                        # Try to get hoster name
+                        if hoster_id == owner_id:
+                            hoster_name = "Your"
+                        elif hoster_id in HOSTED_CLIENTS:
+                            hoster_client = HOSTED_CLIENTS[hoster_id]
+                            hoster_info = await hoster_client.get_me()
+                            hoster_name = f"{hoster_info.first_name}'s"
+                        else:
+                            hoster_name = f"User {hoster_id}'s"
+                    except:
+                        hoster_name = f"User {hoster_id}'s"
+                    deactivated_from.append(hoster_name)
+            
+            if deactivated:
+                await client_eor(message, 
+                    f"**❌ Reply Raid Deactivated by Admin!**\n"
+                    f"**Target User:** {user.mention}\n"
+                    f"**Removed from:** {', '.join(deactivated_from)} raid list")
+            else:
+                await client_eor(message, f"`Reply raid is not activated for {user.first_name}!`")
+        else:
+            # Normal user can only deactivate their own raids
+            if owner_id not in ACTIVATE_RLIST or user.id not in ACTIVATE_RLIST[owner_id]:
+                return await client_eor(message, f"`Reply raid is not activated for {user.first_name}!`")
+            
+            ACTIVATE_RLIST[owner_id].remove(user.id)
+            await client_eor(message, f"**❌ Reply Raid Deactivated!**\n**User:** {user.mention}")
     
     # LOVE REPLY RAID ACTIVATE - For Hosters
     @user_client.on_message(filters.command("rlr", ".") & filters.me)
@@ -885,7 +923,7 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
         ACTIVATE_LLIST[owner_id].append(user.id)
         await client_eor(message, f"**💕 Love Reply Raid Activated!**\n**User:** {user.mention}")
     
-    # LOVE REPLY RAID DEACTIVATE - For Hosters
+    # LOVE REPLY RAID DEACTIVATE - Modified to support Owner/Sudo control
     @user_client.on_message(filters.command("drlr", ".") & filters.me)
     async def lovereplyraid_deactivate(_, message: Message):
         text = get_text(message)
@@ -894,11 +932,49 @@ async def register_userbot_handlers(user_client: Client, owner_id: int):
         if not user:
             return await client_eor(message, "`Reply to user or give username/id!`")
         
-        if owner_id not in ACTIVATE_LLIST or user.id not in ACTIVATE_LLIST[owner_id]:
-            return await client_eor(message, f"`Love reply raid is not activated for {user.first_name}!`")
+        # Get sender's ID
+        sender = await user_client.get_me()
+        sender_id = sender.id
         
-        ACTIVATE_LLIST[owner_id].remove(user.id)
-        await client_eor(message, f"**❌ Love Reply Raid Deactivated!**\n**User:** {user.mention}")
+        # Check if sender is owner or sudo
+        if sender_id in SUDO_USERS:
+            # Owner/Sudo can deactivate any hoster's love raid
+            deactivated = False
+            deactivated_from = []
+            
+            # Check all hosters' love raid lists
+            for hoster_id, raid_list in list(ACTIVATE_LLIST.items()):
+                if user.id in raid_list:
+                    ACTIVATE_LLIST[hoster_id].remove(user.id)
+                    deactivated = True
+                    try:
+                        # Try to get hoster name
+                        if hoster_id == owner_id:
+                            hoster_name = "Your"
+                        elif hoster_id in HOSTED_CLIENTS:
+                            hoster_client = HOSTED_CLIENTS[hoster_id]
+                            hoster_info = await hoster_client.get_me()
+                            hoster_name = f"{hoster_info.first_name}'s"
+                        else:
+                            hoster_name = f"User {hoster_id}'s"
+                    except:
+                        hoster_name = f"User {hoster_id}'s"
+                    deactivated_from.append(hoster_name)
+            
+            if deactivated:
+                await client_eor(message,
+                    f"**❌ Love Reply Raid Deactivated by Admin!**\n"
+                    f"**Target User:** {user.mention}\n"
+                    f"**Removed from:** {', '.join(deactivated_from)} raid list")
+            else:
+                await client_eor(message, f"`Love reply raid is not activated for {user.first_name}!`")
+        else:
+            # Normal user can only deactivate their own raids
+            if owner_id not in ACTIVATE_LLIST or user.id not in ACTIVATE_LLIST[owner_id]:
+                return await client_eor(message, f"`Love reply raid is not activated for {user.first_name}!`")
+            
+            ACTIVATE_LLIST[owner_id].remove(user.id)
+            await client_eor(message, f"**❌ Love Reply Raid Deactivated!**\n**User:** {user.mention}")
     
     # AUTO REPLY RAID HANDLER
     @user_client.on_message(filters.incoming & ~filters.bot & ~filters.service)
