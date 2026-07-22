@@ -8,6 +8,8 @@ from pyrogram import Client, filters, idle
 from pyrogram.handlers import MessageHandler
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 
+# from helper.data import LOVE, RAID, REPLY_RAID, PORM
+
 # ==================== LOGGING ====================
 logging.basicConfig(
     level=logging.INFO,
@@ -51,15 +53,23 @@ async def acquire_lock(message: Message) -> bool:
     asyncio.create_task(clear())
     return True
 
+#'''
 # ==================== DATA LISTS ====================
 RAID = [
     "CHUTIYE TERI MAA KI CHUT ME MERA LUND", "TERI BEHEN KA BHOSDA", "RANDI KE BACHE", 
     "TERI MAA KA BHOSDA", "MADARCHOD", "BETICHOD", "TERI MAA KI CHUT", "NAALI KE KEEDE"
 ]
+
+REPLY_RAID = [
+    "CHUTIYE TERI MAA KI CHUT ME MERA LUND", "TERI BEHEN KA BHOSDA", "RANDI KE BACHE", 
+    "TERI MAA KA BHOSDA", "MADARCHOD", "BETICHOD", "TERI MAA KI CHUT", "NAALI KE KEEDE"
+]
+
 LOVE = [
     "I LOVE YOU JAAN", "MERI JAAN HO TUM", "BABU I LOVE YOU", "MISS YOU JAAN", 
     "Sona I Love You", "Jaanu meri jaan", "Tum meri ho"
 ]
+
 PORM = [
     "https://telegra.ph/file/9bcc076fd81dfe3feb291.mp4",
     "https://telegra.ph/file/b7a1a42429a65f64e67af.mp4",
@@ -68,6 +78,7 @@ PORM = [
     "https://telegra.ph/file/7b15fbca08ae1e73e559c.mp4",
     "https://telegra.ph/file/a9c1dea3f34925bb60686.mp4"
 ]
+#'''
 
 # ==================== ROMEO MANAGER ====================
 
@@ -382,7 +393,7 @@ async def rr_logic_handler(bot: Client, message: Message):
     uid = message.from_user.id
     rj = f"@{message.from_user.username}" if message.from_user.username else f"[{message.from_user.first_name}](tg://user?id={message.from_user.id})"
     if uid in RR_STATE.get(message.chat.id, set()) and uid not in SUDO_USERS:
-        await message.reply_text(f"{rj} {choice(RAID)}")
+        await message.reply_text(f"{rj} {choice(REPLY_RAID)}")
     if uid in RLR_STATE.get(message.chat.id, set()):
         await message.reply_text(f"{rj} {choice(LOVE)}")
 
