@@ -179,33 +179,46 @@ async def predownload_next_track(bot: Client, chat_id: int):
 
 # ==================== VC SYNC SYSTEM ====================
 
-async def all_bots_action(action: str, chat_id: int, stream=None):
+async def all_bots_action(action: str, chat_id: int, stream=None, file_path: str = None, is_video: bool = False):
     """Sirf wo bots VC join/pause karenge jo Group me Admin hain (Silently)"""
     tasks = []
     for client, pytgcalls_app in romeo.call_clients.items():
         try:
             me = await client.get_me()
             member = await client.get_chat_member(chat_id, me.id)
-            if member.status.value == "administrator" and member.privileges and member.privileges.can_manage_video_chats:
-                if action == "pause": tasks.append(pytgcalls_app.pause_stream(chat_id))
-                elif action == "resume": tasks.append(pytgcalls_app.resume_stream(chat_id))
-                elif action == "leave": tasks.append(pytgcalls_app.leave_group_call(chat_id))
-                elif action == "play" and stream:
-                    # Naya object for independent streaming
-                    is_video = isinstance(stream, AudioVideoPiped)
-                    p = stream.path if hasattr(stream, 'path') else None
-                    s = AudioVideoPiped(p) if is_video else AudioPiped(p)
-                    tasks.append(pytgcalls_app.join_group_call(chat_id, s))
-                elif action == "change" and stream:
-                    is_video = isinstance(stream, AudioVideoPiped)
-                    p = stream.path if hasattr(stream, 'path') else None
-                    s = AudioVideoPiped(p) if is_video else AudioPiped(p)
-                    tasks.append(pytgcalls_app.change_stream(chat_id, s))
-        except Exception:
-            continue # Group me nahi hai ya admin nahi hai - chup raho (no error)
-    if tasks: return await asyncio.gather(*tasks, return_exceptions=True)
-    return []
+            is_admin = (
+                member.status.value in ("administrator", "creator") and
+                member.privileges and
+                member.privileges.can_manage_video_chats
+            )
+            if not is_admin:
+                continue
 
+            if action == "pause":
+                tasks.append(pytgcalls_app.pause_stream(chat_id))
+
+            elif action == "resume":
+                tasks.append(pytgcalls_app.resume_stream(chat_id))
+
+            elif action == "leave":
+                tasks.append(pytgcalls_app.leave_group_call(chat_id))
+
+            elif action == "play" and file_path:
+                # Har bot ke liye fresh object
+                s = AudioVideoPiped(file_path) if is_video else AudioPiped(file_path)
+                tasks.append(pytgcalls_app.join_group_call(chat_id, s))
+
+            elif action == "change" and file_path:
+                s = AudioVideoPiped(file_path) if is_video else AudioPiped(file_path)
+                tasks.append(pytgcalls_app.change_stream(chat_id, s))
+
+        except Exception:
+            continue
+
+    if tasks:
+        return await asyncio.gather(*tasks, return_exceptions=True)
+    return []
+    
 async def handle_next_track(bot: Client, pytgcalls_app: PyTgCalls, chat_id: int):
     if VC_ACTION_LOCK.get(chat_id): return
     VC_ACTION_LOCK[chat_id] = True
@@ -230,9 +243,13 @@ async def handle_next_track(bot: Client, pytgcalls_app: PyTgCalls, chat_id: int)
             if next_item.get("msg_id"): SHARED_DOWNLOADS[next_item["msg_id"]] = next_path
         elif not next_path:
             next_path = next_item.get("file")
+        
+        await all_bots_action(
+            "change", chat_id,
+            file_path=next_path,
+            is_video=next_item.get("is_video", False)
+        )
 
-        s = AudioVideoPiped(next_path) if next_item.get("is_video", False) else AudioPiped(next_path)
-        await all_bots_action("change", chat_id, s)
         asyncio.create_task(predownload_next_track(bot, chat_id))
     except: pass
     finally: VC_ACTION_LOCK[chat_id] = False
@@ -362,15 +379,24 @@ async def play_vc_cmd(bot: Client, message: Message):
         if current.get("msg_id"): SHARED_DOWNLOADS[current["msg_id"]] = dl
     else: dl = current.get("downloaded_path") or current.get("file")
 
-    stream = AudioVideoPiped(dl) if current.get("is_video") else AudioPiped(dl)
-    results = await all_bots_action("play", target_chat.id, stream)
+    results = await all_bots_action(
+        "play", target_chat.id,
+        file_path=dl,
+        is_video=current.get("is_video", False)
+    )
     
     success = sum(1 for r in results if not isinstance(r, Exception))
-    if success > 0 or any("already" in str(e).lower() for e in results if isinstance(e, Exception)):
+    errors = [str(e) for e in results if isinstance(e, Exception)]
+    already_in = any("already" in e.lower() or "not in" in e.lower() for e in errors)
+
+    if success > 0 or already_in:
         await sent.edit(f"🎶 **Max Sound Active! ({success} Bots Playing)**\n🎵 `{current['title']}`")
+    elif not results:
+        await sent.edit("⚠️ **Koi bot Admin nahi hai ya VC nahi chal raha!**")
     else:
         MUSIC_QUEUE[target_chat.id].pop(0)
-        await sent.edit("❌ **VC Join Error!**")
+        error_msg = errors[0] if errors else "Unknown"
+        await sent.edit(f"❌ **VC Join Error!**\n`{error_msg}`")
 
 @romeo.on_message(filters.command(["skip", "vcskip"], ["/", "."]) & filters.user(SUDO_USERS))
 async def skip_vc_cmd(bot: Client, message: Message):
