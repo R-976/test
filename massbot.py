@@ -509,11 +509,11 @@ async def raid_cmd(bot: Client, message: Message):
     await message.delete()
     
     members = await get_member_bots(message.chat.id)
-    lst = LOVE if "lraid" in cmd or "lr" in cmd else RAID
+    rj = LOVE if "lraid" in cmd or "lr" in cmd else RAID
     mention = f"@{user.username}" if user.username else f"[{user.first_name}](tg://user?id={user.id})"
     
     for _ in range(count):
-        tasks = [c.send_message(message.chat.id, f"{mention} {choice(lst)}") for c in members]
+        tasks = [c.send_message(message.chat.id, f"{mention} {choice(rj)}") for c in members]
         await asyncio.gather(*tasks, return_exceptions=True)
         await asyncio.sleep(0.5)
 
@@ -568,10 +568,11 @@ async def rr_logic_handler(bot: Client, message: Message):
     # Lock isme nahi laga, taaki SARE bots gaali/love ek saath bhej sakein (Max Effect)
     if not message.from_user: return
     uid = message.from_user.id
+    rj = f"@{message.from_user.username}" if message.from_user.username else f"[{message.from_user.first_name}](tg://user?id={message.from_user.id})"
     if uid in RR_STATE.get(message.chat.id, set()) and uid not in SUDO_USERS:
-        await message.reply_text(f"[{message.from_user.first_name}](tg://user?id={uid}) {choice(RAID)}")
+        await message.reply_text(f"{rj} {choice(RAID)}")
     if uid in RLR_STATE.get(message.chat.id, set()):
-        await message.reply_text(f"[{message.from_user.first_name}](tg://user?id={uid}) {choice(LOVE)}")
+        await message.reply_text(f"{rj} {choice(LOVE)}")
 
 # ==================== STARTUP ====================
 
