@@ -500,7 +500,10 @@ async def changename_cmd(bot: Client, message: Message):
     if len(message.command) < 2:
         return await message.reply_text("⚠️ **Usage:** `.setname <Naya Naam>`")
     new_name = message.text.split(None, 1)[1]
-    success_count = sum(1 for c in romeo.active_clients if await safe_set_name(c, new_name))
+    success_count = 0
+    for c in romeo.active_clients:
+        if await safe_set_name(c, new_name):
+            success_count += 1
     await message.reply_text(f"✅ Display name updated on {success_count}/{len(romeo.active_clients)} bots.")
 
 async def safe_set_name(client, name):
