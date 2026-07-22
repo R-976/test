@@ -343,7 +343,7 @@ async def psm_cmd(bot: Client, message: Message):
 
 # ==================== REPLY RAID ====================
 
-@romeo.on_message(filters.command(["rr", "rlr"], ["/", "."]) & filters.user(SUDO_USERS))
+@romeo.on_message(filters.command(["rr", "replyraid", "rlr", "replyloveraid"], ["/", "."]) & filters.user(SUDO_USERS))
 async def activate_rr(bot: Client, message: Message):
     if not await acquire_lock(message): return
     cmd = message.command[0].lower()
@@ -353,12 +353,12 @@ async def activate_rr(bot: Client, message: Message):
         except: return
     if not user: return
     
-    state_dict = RLR_STATE if "rlr" in cmd else RR_STATE
+    state_dict = RR_STATE if "rr" in cmd or "replyraid" in cmd else RLR_STATE
     if message.chat.id not in state_dict: state_dict[message.chat.id] = set()
     state_dict[message.chat.id].add(user.id)
     await message.reply_text(f"✅ **Activated** for {user.mention}!")
 
-@romeo.on_message(filters.command(["drr", "drlr"], ["/", "."]) & filters.user(SUDO_USERS))
+@romeo.on_message(filters.command(["drr", "dreplyraid", "drlr", "dreplyloveraid"], ["/", "."]) & filters.user(SUDO_USERS))
 async def stop_rr(bot: Client, message: Message):
     if not await acquire_lock(message): return
     cmd = message.command[0].lower()
@@ -368,7 +368,7 @@ async def stop_rr(bot: Client, message: Message):
         except: return
     if not user: return await message.reply_text("⚠️ User specify karo!")
     
-    state_dict = RLR_STATE if "drlr" in cmd else RR_STATE
+    state_dict = RR_STATE  if "drr" in cmd or "dreplyraid" in cmd else RLR_STATE
     chat_users = state_dict.get(message.chat.id, set())
     if user.id in chat_users:
         chat_users.remove(user.id)
