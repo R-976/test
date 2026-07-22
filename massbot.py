@@ -330,7 +330,70 @@ async def show_queue_cmd(bot: Client, message: Message):
 
     await message.reply_text(text)
 
-# ==================== ADVANCED VC CONTROLS (ADMIN CHECKED) ====================
+# ==================== VC SYNC HELPER ====================
+
+async def all_bots_action(action: str, chat_id: int, stream=None):
+    """Sare bots pe simultaneously ek hi action karo"""
+    tasks = []
+    for client, pytgcalls_app in romeo.call_clients.items():
+        if action == "pause":
+            tasks.append(pytgcalls_app.pause_stream(chat_id))
+        elif action == "resume":
+            tasks.append(pytgcalls_app.resume_stream(chat_id))
+        elif action == "leave":
+            tasks.append(pytgcalls_app.leave_group_call(chat_id))
+        elif action == "play" and stream:
+            tasks.append(pytgcalls_app.join_group_call(chat_id, stream))
+        elif action == "change" and stream:
+            tasks.append(pytgcalls_app.change_stream(chat_id, stream))
+    
+    # Sab ek sath chalao, errors ignore karo
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    return results
+
+async def handle_next_track(bot: Client, pytgcalls_app: PyTgCalls, chat_id: int):
+    """Auto-plays next track - ONLY ONE BOT handle kare"""
+    # Race condition fix - sirf pehla bot jo lock le wo handle kare
+    if VC_ACTION_LOCK.get(chat_id):
+        return
+    VC_ACTION_LOCK[chat_id] = True
+
+    try:
+        queue = MUSIC_QUEUE.get(chat_id, [])
+        if queue:
+            finished_item = queue.pop(0)
+            curr_path = finished_item.get("downloaded_path") or finished_item.get("file")
+            await safe_file_cleanup(curr_path, finished_item.get("is_temp", False), finished_item.get("msg_id"))
+
+        if not queue:
+            await all_bots_action("leave", chat_id)
+            MUSIC_QUEUE.pop(chat_id, None)
+            return
+
+        next_item = queue[0]
+        next_path = next_item.get("downloaded_path")
+
+        if not next_path and next_item.get("is_temp") and next_item.get("media_msg"):
+            next_path = await bot.download_media(next_item["media_msg"])
+            next_item["downloaded_path"] = next_path
+            if next_item.get("msg_id"):
+                SHARED_DOWNLOADS[next_item["msg_id"]] = next_path
+        elif not next_path:
+            next_path = next_item.get("file")
+
+        is_video = next_item.get("is_video", False)
+        stream = AudioVideoPiped(next_path) if is_video else AudioPiped(next_path)
+
+        # Sare bots pe ek sath stream change karo
+        await all_bots_action("change", chat_id, stream)
+        asyncio.create_task(predownload_next_track(bot, chat_id))
+
+    except Exception as e:
+        logger.error(f"handle_next_track error {chat_id}: {e}")
+    finally:
+        VC_ACTION_LOCK[chat_id] = False  # Lock release karo
+
+# ==================== PLAY COMMAND ====================
 
 @romeo.on_message(filters.command(["play", "vcplay"], ["/", "."]) & filters.user(SUDO_USERS))
 async def play_vc_cmd(bot: Client, message: Message):
@@ -339,180 +402,153 @@ async def play_vc_cmd(bot: Client, message: Message):
 
     is_admin = await verify_vc_permissions(bot, target_chat.id)
     if not is_admin:
-        return await message.reply_text(
-            f"⚠️ **Pehle mujhe Admin banao!**\n"
-            f"`Manage Video Chats` permission do `{target_chat.title}`me."
-        )
-
-    pytgcalls_app = romeo.call_clients.get(bot)
-    if not pytgcalls_app:
-        return await message.reply_text("❌ PyTgCalls instance missing.")
+        return await message.reply_text("⚠️ **Admin banao + Manage Video Chats permission do!**")
 
     reply = message.reply_to_message
     msg_id = reply.id if reply else None
-
-    # ── Song already queued hai? Sirf VC join karo, dobara add mat karo ──
     already_queued = msg_id and msg_id in QUEUED_MSG_IDS
-    
+
     if not already_queued:
-        # Pehli baar aa raha hai - queue me add karo
         if reply and (reply.audio or reply.video or reply.voice or reply.document):
             media = reply.audio or reply.video or reply.voice or reply.document
             if getattr(media, "file_size", 0) > MAX_FILE_SIZE:
-                return await message.reply_text("❌ **File 200MB se badi hai!**")
+                return await message.reply_text("❌ File 200MB se badi hai!")
             title = getattr(media, "file_name", None) or "Telegram Media Track"
             is_video = bool(reply.video or (reply.document and "video" in str(getattr(reply.document, "mime_type", ""))))
-            item_data = {
-                "title": title,
-                "media_msg": reply,
-                "msg_id": msg_id,
-                "downloaded_path": None,
-                "is_video": is_video,
-                "is_temp": True
-            }
+            item_data = {"title": title, "media_msg": reply, "msg_id": msg_id,
+                        "downloaded_path": None, "is_video": is_video, "is_temp": True}
         else:
             default_path = "./helper/Audio/B1.mp3"
             if not os.path.exists(default_path):
                 return await message.reply_text(f"❌ Default audio missing: `{default_path}`")
-            item_data = {
-                "title": "Default Track",
-                "file": default_path,
-                "downloaded_path": default_path,
-                "msg_id": None,
-                "is_video": False,
-                "is_temp": False
-            }
+            item_data = {"title": "Default Track", "file": default_path,
+                        "downloaded_path": default_path, "msg_id": None, "is_video": False, "is_temp": False}
 
         if target_chat.id not in MUSIC_QUEUE:
             MUSIC_QUEUE[target_chat.id] = []
-
         MUSIC_QUEUE[target_chat.id].append(item_data)
         if msg_id:
             QUEUED_MSG_IDS.add(msg_id)
 
-        # Agar pehle se kuch chal raha hai to queue me add karke sab bots join karen
+        # Already playing - queue me add karke return
         if len(MUSIC_QUEUE[target_chat.id]) > 1:
             asyncio.create_task(predownload_next_track(bot, target_chat.id))
-            await message.reply_text(
-                f"✅ **Queued** #{len(MUSIC_QUEUE[target_chat.id])-1} | `{item_data['title']}`"
+            return await message.reply_text(
+                f"✅ **Queued #{len(MUSIC_QUEUE[target_chat.id])-1}** | `{item_data['title']}`"
             )
-            # Queued song ke liye bhi sab bots join karne ki zaroorat nahi abhi
-            return
 
-    # ── Ab VC join karo (sab bots yahan aayenge) ──
     queue = MUSIC_QUEUE.get(target_chat.id, [])
-    if not queue:
-        return  # Kuch nahi hai play karne ko
+    if not queue: return
 
     current_item = queue[0]
     sent = await message.reply_text("📥 **VC join ho raha hai...**")
 
-    # Shared download check - agar ek bot ne download kiya hai to dusra reuse kare
+    # Shared download
     item_msg_id = current_item.get("msg_id")
     if item_msg_id and item_msg_id in SHARED_DOWNLOADS:
-        # Pehle se downloaded file use karo
         downloaded = SHARED_DOWNLOADS[item_msg_id]
     elif current_item.get("is_temp") and not current_item.get("downloaded_path"):
-        # Pehla bot download karega
         downloaded = await bot.download_media(current_item["media_msg"])
         current_item["downloaded_path"] = downloaded
         if item_msg_id:
-            SHARED_DOWNLOADS[item_msg_id] = downloaded  # Dusre bot ke liye save karo
+            SHARED_DOWNLOADS[item_msg_id] = downloaded
     else:
         downloaded = current_item.get("downloaded_path") or current_item.get("file")
 
     is_video = current_item.get("is_video", False)
     stream = AudioVideoPiped(downloaded) if is_video else AudioPiped(downloaded)
 
-    try:
-        await pytgcalls_app.join_group_call(target_chat.id, stream)
-        me = await bot.get_me()
+    # Sare bots ek sath join karen
+    results = await all_bots_action("play", target_chat.id, stream)
+    success = sum(1 for r in results if not isinstance(r, Exception))
+    errors = [r for r in results if isinstance(r, Exception)]
+
+    already_errors = all("already" in str(e).lower() or "joined" in str(e).lower() for e in errors)
+
+    if success > 0 or already_errors:
         await sent.edit(
-            f"🎶 **@{me.username} VC join kiya `{target_chat.title}`!**\n"
-            f"🎵 `{current_item['title']}`"
+            f"🎶 **{success}/{len(romeo.call_clients)} bots VC me!**\n"
+            f"🎵 `{current_item['title']}` - `{target_chat.title}`"
         )
-    except Exception as e:
-        err = str(e).lower()
-        if "already" in err or "joined" in err:
-            # Ye bot pehle se joined hai ya dusra bot join kar chuka - normal hai
-            await sent.edit(f"✅ **@{(await bot.get_me()).username} bhi VC me aa gaya!**")
-        else:
-            # Real error - lekin queue mat udo, dusra bot chal raha hoga
-            await sent.edit(f"⚠️ **VC join error:** `{e}`")
+    else:
+        MUSIC_QUEUE[target_chat.id].pop(0)
+        await safe_file_cleanup(downloaded, current_item.get("is_temp", False), item_msg_id)
+        await sent.edit(f"❌ **Sare bots fail:** `{errors[0] if errors else 'Unknown'}`")
+
+# ==================== SKIP COMMAND ====================
 
 @romeo.on_message(filters.command(["skip", "vcskip"], ["/", "."]) & filters.user(SUDO_USERS))
 async def skip_vc_cmd(bot: Client, message: Message):
     target_chat = await resolve_target_chat(bot, message)
     if not target_chat: return
 
-    is_admin = await verify_vc_permissions(bot, target_chat.id)
-    if not is_admin:
-        return await message.reply_text("⚠️ **Pehle mujhe Group me Admin banao (Manage Voice Chats permission)!**")
+    if not await verify_vc_permissions(bot, target_chat.id):
+        return await message.reply_text("⚠️ **Admin banao (Manage Voice Chats)!**")
 
-    pytgcalls_app = romeo.call_clients.get(bot)
-    queue = MUSIC_QUEUE.get(target_chat.id, [])
+    if not MUSIC_QUEUE.get(target_chat.id):
+        return await message.reply_text("📭 Queue khali hai.")
 
-    if not queue:
-        return await message.reply_text("📭 Queue me koi song nahi hai.")
+    # Lock check - duplicate skip rokne ke liye
+    if VC_ACTION_LOCK.get(target_chat.id):
+        return await message.reply_text("⏳ Pehle wala skip ho raha hai...")
 
-    await message.reply_text(f"⏭️ **Instant Skipping in `{target_chat.title}`...**")
+    await message.reply_text(f"⏭️ **Skipping in `{target_chat.title}`...**")
+    # Kisi bhi ek bot ka pytgcalls pass karo - handle_next_track andar sab handle karega
+    pytgcalls_app = list(romeo.call_clients.values())[0]
     await handle_next_track(bot, pytgcalls_app, target_chat.id)
+
+# ==================== PAUSE COMMAND ====================
 
 @romeo.on_message(filters.command(["pause", "vcpause"], ["/", "."]) & filters.user(SUDO_USERS))
 async def pause_vc_cmd(bot: Client, message: Message):
     target_chat = await resolve_target_chat(bot, message)
     if not target_chat: return
-    
-    is_admin = await verify_vc_permissions(bot, target_chat.id)
-    if not is_admin:
-        return await message.reply_text("⚠️ **Pehle mujhe Group me Admin banao (Manage Voice Chats permission)!**")
 
-    pytgcalls_app = romeo.call_clients.get(bot)
-    if pytgcalls_app:
-        try:
-            await pytgcalls_app.pause_stream(target_chat.id)
-            await message.reply_text(f"⏸️ **VC Stream Paused in `{target_chat.title}`.**")
-        except Exception as e:
-            await message.reply_text(f"⚠️ **Error pausing VC:** `{e}`")
+    if not await verify_vc_permissions(bot, target_chat.id):
+        return await message.reply_text("⚠️ **Admin banao (Manage Voice Chats)!**")
+
+    # Sare bots ek sath pause
+    results = await all_bots_action("pause", target_chat.id)
+    success = sum(1 for r in results if not isinstance(r, Exception))
+    await message.reply_text(f"⏸️ **Paused - {success}/{len(romeo.call_clients)} bots.**")
+
+# ==================== RESUME COMMAND ====================
 
 @romeo.on_message(filters.command(["resume", "vcresume"], ["/", "."]) & filters.user(SUDO_USERS))
 async def resume_vc_cmd(bot: Client, message: Message):
     target_chat = await resolve_target_chat(bot, message)
     if not target_chat: return
 
-    is_admin = await verify_vc_permissions(bot, target_chat.id)
-    if not is_admin:
-        return await message.reply_text("⚠️ **Pehle mujhe Group me Admin banao (Manage Voice Chats permission)!**")
+    if not await verify_vc_permissions(bot, target_chat.id):
+        return await message.reply_text("⚠️ **Admin banao (Manage Voice Chats)!**")
 
-    pytgcalls_app = romeo.call_clients.get(bot)
-    if pytgcalls_app:
-        try:
-            await pytgcalls_app.resume_stream(target_chat.id)
-            await message.reply_text(f"▶️ **VC Stream Resumed in `{target_chat.title}`.**")
-        except Exception as e:
-            await message.reply_text(f"⚠️ **Error resuming VC:** `{e}`")
+    # Sare bots ek sath resume
+    results = await all_bots_action("resume", target_chat.id)
+    success = sum(1 for r in results if not isinstance(r, Exception))
+    await message.reply_text(f"▶️ **Resumed - {success}/{len(romeo.call_clients)} bots.**")
+
+# ==================== LEAVEVC COMMAND ====================
 
 @romeo.on_message(filters.command(["leavevc", "stopvc"], ["/", "."]) & filters.user(SUDO_USERS))
 async def leave_vc_cmd(bot: Client, message: Message):
     target_chat = await resolve_target_chat(bot, message)
     if not target_chat: return
 
-    pytgcalls_app = romeo.call_clients.get(bot)
-    
-    # Cleanup temp files in queue
     queue = MUSIC_QUEUE.get(target_chat.id, [])
     for item in queue:
         path = item.get("downloaded_path") or item.get("file")
         await safe_file_cleanup(path, item.get("is_temp", False), item.get("msg_id"))
-
     MUSIC_QUEUE.pop(target_chat.id, None)
+    VC_ACTION_LOCK.pop(target_chat.id, None)
 
-    if pytgcalls_app:
-        try:
-            await pytgcalls_app.leave_group_call(target_chat.id)
-            await message.reply_text(f"🛑 **VC Leave kar diya aur Queue clear kar di `{target_chat.title}` me.**")
-        except Exception as e:
-            await message.reply_text(f"⚠️ **Error leaving VC:** `{e}`")
+    # Sare bots ek sath leave
+    results = await all_bots_action("leave", target_chat.id)
+    success = sum(1 for r in results if not isinstance(r, Exception))
+    await message.reply_text(
+        f"🛑 **{success}/{len(romeo.call_clients)} bots ne VC chhoda + Queue clear!**"
+    )
+
+# ==================== CLEARQUEUE COMMAND ====================
 
 @romeo.on_message(filters.command(["clearqueue", "cqueue"], ["/", "."]) & filters.user(SUDO_USERS))
 async def clear_queue_cmd(bot: Client, message: Message):
@@ -521,18 +557,15 @@ async def clear_queue_cmd(bot: Client, message: Message):
 
     queue = MUSIC_QUEUE.get(target_chat.id, [])
     if not queue:
-        return await message.reply_text("📭 Queue pehle se khali hai.")
+        return await message.reply_text("📭 Queue khali hai.")
 
-    # Keep current song, delete remaining queued items and temp files
     current = queue[0]
-    to_delete = queue[1:]
-    
-    for item in to_delete:
+    for item in queue[1:]:
         path = item.get("downloaded_path") or item.get("file")
-        await safe_file_cleanup(path, item.get("is_temp", False))
+        await safe_file_cleanup(path, item.get("is_temp", False), item.get("msg_id"))
 
     MUSIC_QUEUE[target_chat.id] = [current]
-    await message.reply_text(f"🗑️ **Queued songs clear kar diye gaye `{target_chat.title}` me (Current playing song chhod kar).**")
+    await message.reply_text(f"🗑️ **Queue clear - current song chal raha hai `{target_chat.title}`.**")
 
 # ==================== MASS PROFILE CUSTOMIZATION (SUDO) ====================
 
