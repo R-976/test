@@ -386,7 +386,7 @@ async def play_vc_cmd(bot: Client, message: Message):
     )
     
     success = sum(1 for r in results if not isinstance(r, Exception))
-    errors = [str(e) for e in results if isinstance(r, Exception)]
+    errors = [str(e) for e in results if isinstance(e, Exception)]
     already_in = any("already" in e.lower() or "not in" in e.lower() for e in errors)
 
     if success > 0 or already_in:
