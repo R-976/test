@@ -70,8 +70,12 @@ LOVE = [
     "Sona I Love You", "Jaanu meri jaan", "Tum meri ho"
 ]
 PORM = [
-    "https://telegra.ph/file/02525126831006900f86d.mp4",
-    "https://telegra.ph/file/206a233c829e24876356a.mp4"
+    "https://telegra.ph/file/9bcc076fd81dfe3feb291.mp4",
+    "https://telegra.ph/file/b7a1a42429a65f64e67af.mp4",
+    "https://telegra.ph/file/dc3da5a3eb77ae20fa21d.mp4",
+    "https://telegra.ph/file/22b89774a4ba9219d530b.mp4",
+    "https://telegra.ph/file/7b15fbca08ae1e73e559c.mp4",
+    "https://telegra.ph/file/a9c1dea3f34925bb60686.mp4"
 ]
 
 # Global Raid States: {chat_id: set(user_ids)}
