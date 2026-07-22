@@ -1,5 +1,6 @@
 import os
 import sys
+import aiohttp
 import asyncio
 import logging
 from random import choice
@@ -129,6 +130,18 @@ class RomeoManager:
         logger.info("🛑 Multi-bot system shut down.")
 
 romeo = RomeoManager()
+
+async def bot_api(token: str, method: str, **kwargs) -> bool:
+    """Direct Telegram Bot API caller"""
+    try:
+        async with aiohttp.ClientSession() as s:
+            async with s.post(
+                f"https://api.telegram.org/bot{token}/{method}", 
+                json=kwargs
+            ) as r:
+                return (await r.json()).get("ok", False)
+    except Exception:
+        return False
 
 # ==================== HELPER & QUEUE ENGINE ====================
 
@@ -495,72 +508,52 @@ async def clear_queue_cmd(bot: Client, message: Message):
 
 # ==================== MASS PROFILE CUSTOMIZATION (SUDO) ====================
 
-@romeo.on_message(filters.command(["setname", "changename"], ["/", "."]) & filters.user(SUDO_USERS))
-async def changename_cmd(bot: Client, message: Message):
+@romeo.on_message(filters.command(["setname","setbio","setdesc","setpic"], ["/","."]) & filters.user(SUDO_USERS))
+async def profile_cmd(bot: Client, message: Message):
+    cmd = message.command[0].lower()
+
+    # setpic alag handle hoga
+    if cmd == "setpic":
+        if not message.reply_to_message or not message.reply_to_message.photo:
+            return await message.reply_text("⚠️ Photo pe reply karke `.setpic` bhejo.")
+        op = await message.reply_text("🔄 DP update ho rahi hai...")
+        photo_file = await bot.download_media(message.reply_to_message.photo)
+        ok = 0
+        for c in romeo.active_clients:
+            try:
+                await c.set_profile_photo(photo=photo_file)
+                ok += 1
+            except Exception:
+                pass
+        if os.path.exists(photo_file):
+            os.remove(photo_file)
+        return await op.edit(f"✅ DP {ok}/{len(romeo.active_clients)} bots pe update!")
+
+    # Name/Bio/Desc ke liye text chahiye
     if len(message.command) < 2:
-        return await message.reply_text("⚠️ **Usage:** `.setname <Naya Naam>`")
-    new_name = message.text.split(None, 1)[1]
-    success_count = 0
-    for c in romeo.active_clients:
-        if await safe_set_name(c, new_name):
-            success_count += 1
-    await message.reply_text(f"✅ Display name updated on {success_count}/{len(romeo.active_clients)} bots.")
+        usage = {"setname": ".setname <Naam>", "setbio": ".setbio <Bio>", "setdesc": ".setdesc <Desc>"}
+        return await message.reply_text(f"⚠️ Usage: `{usage[cmd]}`")
 
-async def safe_set_name(client, name):
-    try:
-        await client.set_my_name(name)
-        return True
-    except Exception:
-        return False
+    text = message.text.split(None, 1)[1]
 
-@romeo.on_message(filters.command(["setbio", "changebio"], ["/", "."]) & filters.user(SUDO_USERS))
-async def changebio_cmd(bot: Client, message: Message):
-    if len(message.command) < 2:
-        return await message.reply_text("⚠️ **Usage:** `.setbio <Naya Bio>`")
-    new_bio = message.text.split(None, 1)[1]
-    success_count = 0
-    for client in romeo.active_clients:
-        try:
-            await client.set_my_short_description(new_bio)
-            success_count += 1
-        except Exception:
-            pass
-    await message.reply_text(f"✅ Bio updated on {success_count}/{len(romeo.active_clients)} bots.")
+    # Method aur payload map
+    api_map = {
+        "setname": ("setMyName",             {"name": text}),
+        "setbio":  ("setMyShortDescription", {"short_description": text}),
+        "setdesc": ("setMyDescription",      {"description": text}),
+    }
+    method, payload = api_map[cmd]
 
-@romeo.on_message(filters.command(["setdesc", "setdescription"], ["/", "."]) & filters.user(SUDO_USERS))
-async def changedesc_cmd(bot: Client, message: Message):
-    if len(message.command) < 2:
-        return await message.reply_text("⚠️ **Usage:** `.setdesc <Naya Description>`")
-    new_desc = message.text.split(None, 1)[1]
-    success_count = 0
-    for client in romeo.active_clients:
-        try:
-            await client.set_my_description(new_desc)
-            success_count += 1
-        except Exception:
-            pass
-    await message.reply_text(f"✅ Description updated on {success_count}/{len(romeo.active_clients)} bots.")
+    ok = 0
+    for token in BOT_TOKENS:
+        if await bot_api(token.strip(), method, **payload):
+            ok += 1
 
-@romeo.on_message(filters.command(["setpic", "setphoto"], ["/", "."]) & filters.user(SUDO_USERS))
-async def changepic_cmd(bot: Client, message: Message):
-    if not message.reply_to_message or not message.reply_to_message.photo:
-        return await message.reply_text("⚠️ Photo par reply karke `.setpic` bhejo.")
-
-    op = await message.reply_text("🔄 **Photo download karke sabhi bots par DP lagayi ja rahi hai...**")
-    photo_file = await bot.download_media(message.reply_to_message.photo)
-    success_count = 0
-
-    for client in romeo.active_clients:
-        try:
-            await client.set_profile_photo(photo=photo_file)
-            success_count += 1
-        except Exception:
-            pass
-
-    if os.path.exists(photo_file):
-        os.remove(photo_file)
-
-    await op.edit(f"✅ **Profile Photo {success_count}/{len(romeo.active_clients)} bots par update ho gayi!**")
+    await message.reply_text(
+        f"✅ `{cmd}` → `{text}`\n"
+        f"📊 {ok}/{len(BOT_TOKENS)} bots pe apply hua\n"
+        f"⏳ Telegram cache me 1-2 min lag sakte hain."
+    )
 
 # ==================== MASS DESTRUCTION COMMANDS (SUDO) ====================
 
