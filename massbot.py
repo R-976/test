@@ -35,6 +35,8 @@ MAX_FILE_SIZE = 200 * 1024 * 1024  # 200 MB Limit
 # Structure: {chat_id: [{"title": str, "file": str, "is_video": bool, "is_temp": bool, "message_ref": Message}]}
 MUSIC_QUEUE = {}
 DOWNLOADING_STATE = {}
+QUEUED_MSG_IDS = set()   # Duplicate queue add rokne ke liye
+SHARED_DOWNLOADS = {}     # {message_id: downloaded_file_path} - Dono bots ek hi file use karen
 
 # ==================== DATA LISTS FOR RAIDS & SPAM ====================
 RAID = [
@@ -169,14 +171,19 @@ async def verify_vc_permissions(bot: Client, chat_id: int) -> bool:
     except Exception:
         return False
 
-async def safe_file_cleanup(file_path: str, is_temp: bool):
-    """Clean temp files to optimize storage"""
+async def safe_file_cleanup(file_path: str, is_temp: bool, msg_id=None):
+    # Shared downloads se bhi remove karo
+    if msg_id and msg_id in SHARED_DOWNLOADS:
+        SHARED_DOWNLOADS.pop(msg_id, None)
+    if msg_id and msg_id in QUEUED_MSG_IDS:
+        QUEUED_MSG_IDS.discard(msg_id)
+    # Purana cleanup logic same rahega
     if is_temp and file_path and os.path.exists(file_path) and "helper/Audio" not in file_path:
         try:
             os.remove(file_path)
-            logger.info(f"🗑️ Deleted temp file: {file_path}")
+            logger.info(f"🗑️ Deleted: {file_path}")
         except Exception as e:
-            logger.error(f"Error deleting file {file_path}: {e}")
+            logger.error(f"Delete error: {e}")
 
 async def predownload_next_track(bot: Client, chat_id: int):
     """Lazy download: Downloads ONLY the next queued track in background"""
@@ -204,7 +211,7 @@ async def handle_next_track(bot: Client, pytgcalls_app: PyTgCalls, chat_id: int)
         # Finish current song -> Cleanup temp file
         finished_item = queue.pop(0)
         curr_path = finished_item.get("downloaded_path") or finished_item.get("file")
-        await safe_file_cleanup(curr_path, finished_item.get("is_temp", False))
+        await safe_file_cleanup(curr_path, finished_item.get("is_temp", False), finished_item.get("msg_id")) # msg_id bhi pass kar
 
     if not queue:
         # Queue empty -> Auto Leave VC
@@ -330,13 +337,11 @@ async def play_vc_cmd(bot: Client, message: Message):
     target_chat = await resolve_target_chat(bot, message)
     if not target_chat: return
 
-    # Admin Guard Check
     is_admin = await verify_vc_permissions(bot, target_chat.id)
     if not is_admin:
         return await message.reply_text(
-            f"⚠️ **Pehle mujhe Group me Admin banao!**\n\n"
-            f"Bot ko `{target_chat.title if hasattr(target_chat, 'title') else target_chat.id}` me **Admin** banao "
-            f"aur permission do:\n• `Manage Video Chats` (Manage Voice Chats)"
+            f"⚠️ **Pehle mujhe Admin banao!**\n"
+            f"`Manage Video Chats` permission do `{target_chat.title}`me."
         )
 
     pytgcalls_app = romeo.call_clients.get(bot)
@@ -344,73 +349,96 @@ async def play_vc_cmd(bot: Client, message: Message):
         return await message.reply_text("❌ PyTgCalls instance missing.")
 
     reply = message.reply_to_message
-    item_data = {}
+    msg_id = reply.id if reply else None
 
-    # 1. Reply to Media Case
-    if reply and (reply.audio or reply.video or reply.voice or reply.document):
-        media = reply.audio or reply.video or reply.voice or reply.document
-        
-        # 200 MB Safety Check
-        if getattr(media, "file_size", 0) > MAX_FILE_SIZE:
-            return await message.reply_text("❌ **File Size Limit Exceeded!**\n\nFile 200MB se kam honi chahiye.")
-
-        title = getattr(media, "file_name", None) or "Telegram Media Track"
-        is_video = bool(reply.video or (reply.document and "video" in str(getattr(reply.document, "mime_type", ""))))
-        
-        item_data = {
-            "title": title,
-            "media_msg": reply,
-            "downloaded_path": None,
-            "is_video": is_video,
-            "is_temp": True
-        }
-
-    # 2. Plain /play Case (Default Stored File)
-    else:
-        default_path = "./helper/Audio/B1.mp3"
-        if not os.path.exists(default_path):
-            return await message.reply_text(f"❌ Default audio missing at `{default_path}`.")
-        
-        item_data = {
-            "title": "Default Asset Track",
-            "file": default_path,
-            "downloaded_path": default_path,
-            "is_video": False,
-            "is_temp": False
-        }
-
-    if target_chat.id not in MUSIC_QUEUE:
-        MUSIC_QUEUE[target_chat.id] = []
-
-    queue = MUSIC_QUEUE[target_chat.id]
-    queue.append(item_data)
-
-    # If already playing -> Add to queue
-    if len(queue) > 1:
-        pos = len(queue) - 1
-        # Pre-download next song in background if this is index 1
-        asyncio.create_task(predownload_next_track(bot, target_chat.id))
-        return await message.reply_text(f"✅ **Queued in `{target_chat.title}`**\n📌 **Position:** #{pos} | `{item_data['title']}`")
-
-    # If first song -> Download & Play
-    sent = await message.reply_text("📥 **Song load ho raha hai...**")
+    # ── Song already queued hai? Sirf VC join karo, dobara add mat karo ──
+    already_queued = msg_id and msg_id in QUEUED_MSG_IDS
     
-    if item_data.get("is_temp"):
-        downloaded = await bot.download_media(item_data["media_msg"])
-        item_data["downloaded_path"] = downloaded
-    else:
-        downloaded = item_data["file"]
+    if not already_queued:
+        # Pehli baar aa raha hai - queue me add karo
+        if reply and (reply.audio or reply.video or reply.voice or reply.document):
+            media = reply.audio or reply.video or reply.voice or reply.document
+            if getattr(media, "file_size", 0) > MAX_FILE_SIZE:
+                return await message.reply_text("❌ **File 200MB se badi hai!**")
+            title = getattr(media, "file_name", None) or "Telegram Media Track"
+            is_video = bool(reply.video or (reply.document and "video" in str(getattr(reply.document, "mime_type", ""))))
+            item_data = {
+                "title": title,
+                "media_msg": reply,
+                "msg_id": msg_id,
+                "downloaded_path": None,
+                "is_video": is_video,
+                "is_temp": True
+            }
+        else:
+            default_path = "./helper/Audio/B1.mp3"
+            if not os.path.exists(default_path):
+                return await message.reply_text(f"❌ Default audio missing: `{default_path}`")
+            item_data = {
+                "title": "Default Track",
+                "file": default_path,
+                "downloaded_path": default_path,
+                "msg_id": None,
+                "is_video": False,
+                "is_temp": False
+            }
 
-    stream = AudioVideoPiped(downloaded) if item_data["is_video"] else AudioPiped(downloaded)
+        if target_chat.id not in MUSIC_QUEUE:
+            MUSIC_QUEUE[target_chat.id] = []
+
+        MUSIC_QUEUE[target_chat.id].append(item_data)
+        if msg_id:
+            QUEUED_MSG_IDS.add(msg_id)
+
+        # Agar pehle se kuch chal raha hai to queue me add karke sab bots join karen
+        if len(MUSIC_QUEUE[target_chat.id]) > 1:
+            asyncio.create_task(predownload_next_track(bot, target_chat.id))
+            await message.reply_text(
+                f"✅ **Queued** #{len(MUSIC_QUEUE[target_chat.id])-1} | `{item_data['title']}`"
+            )
+            # Queued song ke liye bhi sab bots join karne ki zaroorat nahi abhi
+            return
+
+    # ── Ab VC join karo (sab bots yahan aayenge) ──
+    queue = MUSIC_QUEUE.get(target_chat.id, [])
+    if not queue:
+        return  # Kuch nahi hai play karne ko
+
+    current_item = queue[0]
+    sent = await message.reply_text("📥 **VC join ho raha hai...**")
+
+    # Shared download check - agar ek bot ne download kiya hai to dusra reuse kare
+    item_msg_id = current_item.get("msg_id")
+    if item_msg_id and item_msg_id in SHARED_DOWNLOADS:
+        # Pehle se downloaded file use karo
+        downloaded = SHARED_DOWNLOADS[item_msg_id]
+    elif current_item.get("is_temp") and not current_item.get("downloaded_path"):
+        # Pehla bot download karega
+        downloaded = await bot.download_media(current_item["media_msg"])
+        current_item["downloaded_path"] = downloaded
+        if item_msg_id:
+            SHARED_DOWNLOADS[item_msg_id] = downloaded  # Dusre bot ke liye save karo
+    else:
+        downloaded = current_item.get("downloaded_path") or current_item.get("file")
+
+    is_video = current_item.get("is_video", False)
+    stream = AudioVideoPiped(downloaded) if is_video else AudioPiped(downloaded)
 
     try:
         await pytgcalls_app.join_group_call(target_chat.id, stream)
         me = await bot.get_me()
-        await sent.edit(f"🎶 **@{me.username} joined VC & playing in `{target_chat.title}`!**\n🎵 `{item_data['title']}`")
+        await sent.edit(
+            f"🎶 **@{me.username} VC join kiya `{target_chat.title}`!**\n"
+            f"🎵 `{current_item['title']}`"
+        )
     except Exception as e:
-        queue.pop(0)
-        await safe_file_cleanup(downloaded, item_data.get("is_temp", False))
-        await sent.edit(f"❌ **Error joining VC:** `{e}`")
+        err = str(e).lower()
+        if "already" in err or "joined" in err:
+            # Ye bot pehle se joined hai ya dusra bot join kar chuka - normal hai
+            await sent.edit(f"✅ **@{(await bot.get_me()).username} bhi VC me aa gaya!**")
+        else:
+            # Real error - lekin queue mat udo, dusra bot chal raha hoga
+            await sent.edit(f"⚠️ **VC join error:** `{e}`")
 
 @romeo.on_message(filters.command(["skip", "vcskip"], ["/", "."]) & filters.user(SUDO_USERS))
 async def skip_vc_cmd(bot: Client, message: Message):
@@ -475,7 +503,7 @@ async def leave_vc_cmd(bot: Client, message: Message):
     queue = MUSIC_QUEUE.get(target_chat.id, [])
     for item in queue:
         path = item.get("downloaded_path") or item.get("file")
-        await safe_file_cleanup(path, item.get("is_temp", False))
+        await safe_file_cleanup(path, item.get("is_temp", False), item.get("msg_id"))
 
     MUSIC_QUEUE.pop(target_chat.id, None)
 
