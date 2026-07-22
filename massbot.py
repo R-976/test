@@ -231,15 +231,56 @@ async def handle_next_track(bot: Client, pytgcalls_app: PyTgCalls, chat_id: int)
 async def start_cmd(bot: Client, message: Message):
     if not await acquire_lock(message): return
     me = await bot.get_me()
-    caption = f"**🌟 Welcome (@{me.username}) 🌟**\n\n🤖 **Status:** Online\n👤 **Bot:** {me.first_name}\n⚡ **Engine:** Multi-Bot Elite"
-    buttons = InlineKeyboardMarkup([[InlineKeyboardButton("📢 Updates", url="https://t.me/Romeo_op")]])
-    try: await message.reply_photo(photo=ALIVE_PIC, caption=caption, reply_markup=buttons)
-    except: await message.reply_text(caption, reply_markup=buttons)
+    caption = (
+        f"**🌟 Welcome to Multi-Bot Assistant (@{me.username}) 🌟**\n\n"
+        f"🤖 **Status:** Online & Ready!\n"
+        f"👤 **Bot Name:** {me.first_name}\n"
+        f"⚡ **Engine:** Romeo Multi-Bot Dispatcher\n\n"
+        f"Commands janne ke liye `/help` use karein."
+    )
+    buttons = InlineKeyboardMarkup([
+        [InlineKeyboardButton("💬 Support Group", url="https://t.me/RomeoBot_op")],
+        [InlineKeyboardButton("📢 Updates Channel", url="https://t.me/Romeo_op")]
+    ])
+    
+    try:
+        await message.reply_photo(photo=ALIVE_PIC, caption=caption, reply_markup=buttons)
+    except Exception:
+        await message.reply_text(caption, reply_markup=buttons)
 
 @romeo.on_message(filters.command("help", ["/", "."]))
 async def help_cmd(bot: Client, message: Message):
     if not await acquire_lock(message): return
-    await message.reply_text("**📖 Multi-Bot Commands 📖**\n\n• Basic: `/start`, `/ping`, `/queue`\n• VC: `/play`, `/skip`, `/pause`, `/resume`, `/leavevc`\n• Destruction: `/banall`\n• Spam: `/spam`, `/raid`, `/lraid`, `/psm`\n• Reply Raid: `/rr`, `/drr`, `/rlr`, `/drlr`\n• Setup: `.setname`, `.setbio`, `.setdesc`, `.setpic`")
+    help_text = (
+        "**📖 Romeo Multi-Bot Ultimate Guide 📖**\n\n"
+        "**───────── BASIC COMMANDS ─────────**\n"
+        "• `/start` , `/alive` , `/ping` , `/help` , `/queue` \n\n"
+
+        "**───────── MUSIC CONTROLS (Sudo) ─────────**\n"
+        "• `/play [target]` , `/skip [target]` , `/pause [target]` \n"
+        "• `/resume [target]` , `/leavevc [target]` , `/clearqueue [target]` \n\n"
+
+        "**───────── MASS DESTRUCTION (Sudo) ─────────**\n"
+        "• `/banall [target]` → Group ke sabhi members ko ban karein.\n\n"
+
+        "**───────── SPAM & RAID (Sudo) ─────────**\n"
+        "• `/spam <count>` → Reply to media/text to spam.\n"
+        "• `/raid <count> <user>` → User ko gaali raid karne ke liye.\n"
+        "• `/lraid <count> <user>` → User ko love raid karne ke liye.\n"
+        "• `/psm <count>` → Adult video spam karne ke liye.\n\n"
+
+        "**───────── REPLY RAID (Sudo) ─────────**\n"
+        "• `/rr <user/reply>` → Auto-reply raid (Gaali) activate karein.\n"
+        "• `/drr` → Reply raid band karein.\n"
+        "• `/rlr <user/reply>` → Auto-reply love raid (Pyaar) activate karein.\n"
+        "• `/drlr` → Love reply raid band karein.\n"
+        "📝 *Note: Agar dono active hain to 2 msg jayenge (1 gaali, 1 pyaar). Sudo ko sirf pyaar jayega.*\n\n"
+
+        "**───────── PROFILE SETUP (Sudo) ─────────**\n"
+        "• `.setname <Name>` , `.setbio <Bio>` , `.setdesc <Desc>` , `.setpic` \n\n"
+        "💡 **Targeting Rule:** Command ke aage `@group` ya `groupID` lene par us target group me kaam hoga. Agar nahi doge toh CURRENT group me action hoga!"
+    )
+    await message.reply_text(help_text)
 
 @romeo.on_message(filters.command(["queue", "q"], ["/", "."]))
 async def show_queue_cmd(bot: Client, message: Message):
