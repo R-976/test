@@ -204,48 +204,6 @@ async def predownload_next_track(bot: Client, chat_id: int):
             finally:
                 DOWNLOADING_STATE[chat_id] = False
 
-async def handle_next_track(bot: Client, pytgcalls_app: PyTgCalls, chat_id: int):
-    """Auto-plays next track or leaves VC if queue is empty"""
-    queue = MUSIC_QUEUE.get(chat_id, [])
-    
-    if queue:
-        # Finish current song -> Cleanup temp file
-        finished_item = queue.pop(0)
-        curr_path = finished_item.get("downloaded_path") or finished_item.get("file")
-        await safe_file_cleanup(curr_path, finished_item.get("is_temp", False), finished_item.get("msg_id")) # msg_id bhi pass kar
-
-    if not queue:
-        # Queue empty -> Auto Leave VC
-        try:
-            await pytgcalls_app.leave_group_call(chat_id)
-            logger.info(f"🛑 Queue finished. Left VC in chat {chat_id}")
-        except Exception:
-            pass
-        MUSIC_QUEUE.pop(chat_id, None)
-        return
-
-    # Play Next Track
-    next_item = queue[0]
-    next_path = next_item.get("downloaded_path")
-    
-    if not next_path and next_item.get("is_temp") and next_item.get("media_msg"):
-        # Download if not pre-downloaded
-        next_path = await bot.download_media(next_item["media_msg"])
-        next_item["downloaded_path"] = next_path
-    elif not next_path:
-        next_path = next_item.get("file")
-
-    is_video = next_item.get("is_video", False)
-    stream = AudioVideoPiped(next_path) if is_video else AudioPiped(next_path)
-
-    try:
-        await pytgcalls_app.change_stream(chat_id, stream)
-        # Trigger background download for the upcoming song
-        asyncio.create_task(predownload_next_track(bot, chat_id))
-    except Exception as e:
-        logger.error(f"Error playing next stream in {chat_id}: {e}")
-        await handle_next_track(bot, pytgcalls_app, chat_id)
-
 # ==================== PUBLIC BASIC COMMANDS (NO ADMIN NEEDED) ====================
 
 @romeo.on_message(filters.command("start", ["/", "."]))
