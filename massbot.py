@@ -282,6 +282,10 @@ async def help_cmd(bot: Client, message: Message):
     )
     await message.reply_text(help_text)
 
+@romeo.on_message(filters.command(["ping", "alive"], ["/", "."]))
+async def ping_cmd(bot: Client, message: Message):
+    await message.reply_text("🏓 Pong!")
+
 @romeo.on_message(filters.command(["queue", "q"], ["/", "."]))
 async def show_queue_cmd(bot: Client, message: Message):
     if not await acquire_lock(message): return
