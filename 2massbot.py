@@ -130,6 +130,22 @@ async def resolve_target_chat(bot: Client, message: Message):
             return None
     return message.chat
 
+async def restart_all_bots(message: Message):
+    """Stop all bots and restart the entire process"""
+    try:
+        await message.reply_text(f"🔄 **Restarting all bots...**\n\n⏳ Bot 2-3 seconds me wapas aayega!")
+        for c in romeo.active_clients:
+            try: await c.stop()
+            except: pass
+        romeo.active_clients.clear()
+        await asyncio.sleep(1)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    except Exception as e:
+        try:
+            await message.reply_text(f"⚠️ Force restarting...\n`{e}`")
+        except: pass
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+        
 # ==================== BASIC COMMANDS ====================
 
 @romeo.on_message(filters.command("start", ["/", "."]))
@@ -159,6 +175,7 @@ async def help_cmd(bot: Client, message: Message):
     help_text = (
         "**📖 Romeo Multi-Bot Ultimate Guide 📖**\n\n"
         "**───────── BASIC COMMANDS ─────────**\n"
+        "• `/restart` → Sare bots restart karo (lag/crash fix)\n"
         "• `/start` , `/alive` , `/ping` , `/help`\n\n"
 
         "**───────── MASS DESTRUCTION (Sudo) ─────────**\n"
@@ -186,6 +203,11 @@ async def help_cmd(bot: Client, message: Message):
 @romeo.on_message(filters.command(["ping", "alive"], ["/", "."]))
 async def ping_cmd(bot: Client, message: Message):
     await message.reply_text("🏓 Pong!")
+
+@romeo.on_message(filters.command(["restart", "reboot"], ["/", "."]) & filters.user(SUDO_USERS))
+async def restart_cmd(bot: Client, message: Message):
+    if not await acquire_lock(message): return
+    await restart_all_bots(message)
 
 # ==================== PROFILE CUSTOMIZATION ====================
 
