@@ -17,6 +17,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger("MULTI-DISPATCHER")
 
+# Pyrogram ke extra logs band karo
+for noisy in ['pyrogram', 'pyrogram.session', 'pyrogram.connection']:
+    logging.getLogger(noisy).setLevel(logging.WARNING)
+
+def ignore_peer_errors(loop, context):
+    """Completely ignore peer id errors"""
+    return
+    
 # ==================== CONFIGURATION ====================
 API_ID = int(os.getenv("API_ID", "10796618"))
 API_HASH = os.getenv("API_HASH", "4e4b20b4e1e40c90fcb1a7658c800150")
