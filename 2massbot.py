@@ -35,6 +35,9 @@ SUDO_USERS = [5368154755, 7595462949, 8288876886]
 GROUP = [-1001727158017, -1001265778325, -1001625889213, -1001882915379]
 MAX_FILE_SIZE = 200 * 1024 * 1024
 
+RR_STATE = {}
+RLR_STATE = {}
+
 CMD_LOCK = set()
 
 async def acquire_lock(message: Message) -> bool:
@@ -65,9 +68,6 @@ PORM = [
     "https://telegra.ph/file/7b15fbca08ae1e73e559c.mp4",
     "https://telegra.ph/file/a9c1dea3f34925bb60686.mp4"
 ]
-
-RR_STATE = {}
-RLR_STATE = {}
 
 # ==================== ROMEO MANAGER ====================
 
