@@ -297,6 +297,8 @@ async def spam_cmd(bot: Client, message: Message):
         elif len(args) > 2:
             txt = message.text.split(None, 2)[2]
             tasks = [c.send_message(message.chat.id, txt) for c in members]
+        else:
+            break  # ✅agar reply bhi nahi aur text bhi nahi to tasks define nahi hoga ( kuch nahi diya to loop tod do )
         await asyncio.gather(*tasks, return_exceptions=True)
         await asyncio.sleep(0.1)
 
