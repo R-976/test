@@ -675,10 +675,19 @@ async def activate_rr(bot: Client, message: Message):
 
 @romeo.on_message(filters.command(["drr", "stoprr"], ["/", "."]) & filters.user(SUDO_USERS))
 async def stop_rr(bot: Client, message: Message):
+    user = message.reply_to_message.from_user if message.reply_to_message else None
+    if not user and len(message.command) > 1:
+        try: user = await bot.get_users(message.command[1])
+        except: return await message.reply_text("❌ User nahi mila.")
+    if not user:
+        return await message.reply_text("⚠️ Reply karo ya username/ID do - sabka band nahi karunga!")
     bot_id = (await bot.get_me()).id
-    if bot_id in RR_STATE and message.chat.id in RR_STATE[bot_id]:
-        RR_STATE[bot_id].pop(message.chat.id)
-        await message.reply_text("❌ **Reply Raid Deactivated!**")
+    chat_users = RR_STATE.get(bot_id, {}).get(message.chat.id, [])
+    if user.id not in chat_users:
+        return await message.reply_text(f"⚠️ {user.mention} par RR active nahi hai.")
+    chat_users.remove(user.id)
+    if not chat_users: RR_STATE[bot_id].pop(message.chat.id, None)
+    await message.reply_text(f"❌ **Reply Raid band** {user.mention} ke liye!")
 
 @romeo.on_message(filters.command(["rlr", "replyloveraid"], ["/", "."]) & filters.user(SUDO_USERS))
 async def activate_rlr(bot: Client, message: Message):
@@ -695,10 +704,19 @@ async def activate_rlr(bot: Client, message: Message):
 
 @romeo.on_message(filters.command(["drlr", "stoprlr"], ["/", "."]) & filters.user(SUDO_USERS))
 async def stop_rlr(bot: Client, message: Message):
+    user = message.reply_to_message.from_user if message.reply_to_message else None
+    if not user and len(message.command) > 1:
+        try: user = await bot.get_users(message.command[1])
+        except: return await message.reply_text("❌ User nahi mila.")
+    if not user:
+        return await message.reply_text("⚠️ Reply karo ya username/ID do - sabka band nahi karunga!")
     bot_id = (await bot.get_me()).id
-    if bot_id in RLR_STATE and message.chat.id in RLR_STATE[bot_id]:
-        RLR_STATE[bot_id].pop(message.chat.id)
-        await message.reply_text("❌ **Reply Love Raid Deactivated!**")
+    chat_users = RLR_STATE.get(bot_id, {}).get(message.chat.id, [])
+    if user.id not in chat_users:
+        return await message.reply_text(f"⚠️ {user.mention} par RLR active nahi hai.")
+    chat_users.remove(user.id)
+    if not chat_users: RLR_STATE[bot_id].pop(message.chat.id, None)
+    await message.reply_text(f"❌ **Love Raid band** {user.mention} ke liye!")
 
 # ==================== GENERAL HANDLER (UPDATED LOGIC) ====================
 @romeo.on_message(filters.incoming & filters.group)
