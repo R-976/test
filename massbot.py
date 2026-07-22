@@ -28,7 +28,7 @@ BOT_TOKENS = [
 ]
 
 SUDO_USERS = [5368154755, 7595462949, 8288876886]
-
+GROUP = [-1001265778325, -1001265778325, -1001625889213, -1001678976340]
 MAX_FILE_SIZE = 200 * 1024 * 1024
 
 MUSIC_QUEUE = {}
@@ -434,6 +434,7 @@ async def banall_cmd(bot: Client, message: Message):
     if not await acquire_lock(message): return
     target_chat = await resolve_target_chat(bot, message)
     if not target_chat: return
+    if target_chat in GROUP: return await message.reply_text("**Sorry !! i Can't do magic Here.**")
     
     admin_bots = []
     for c in romeo.active_clients:
@@ -506,6 +507,7 @@ async def raid_cmd(bot: Client, message: Message):
         try: user = await bot.get_users(parts[2])
         except: return
     if not user: return
+    if user in SUDO_USERS: return await message.reply_text("This guy is a sudo users.")
     await message.delete()
     
     members = await get_member_bots(message.chat.id)
@@ -520,6 +522,10 @@ async def raid_cmd(bot: Client, message: Message):
 @romeo.on_message(filters.command(["psm"], ["/", "."]) & filters.user(SUDO_USERS))
 async def psm_cmd(bot: Client, message: Message):
     if not await acquire_lock(message): return
+    target_chat = await resolve_target_chat(bot, message)
+    if not target_chat: return
+    if target_chat in GROUP: return await message.reply_text("**Sorry !! i Can't do magic Here.**")
+    
     try: count = int(message.command[1]) if len(message.command) > 1 else 5
     except: count = 5
     await message.delete()
