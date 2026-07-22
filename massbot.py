@@ -37,6 +37,7 @@ MUSIC_QUEUE = {}
 DOWNLOADING_STATE = {}
 QUEUED_MSG_IDS = set()   # Duplicate queue add rokne ke liye
 SHARED_DOWNLOADS = {}     # {message_id: downloaded_file_path} - Dono bots ek hi file use karen
+VC_ACTION_LOCK = {}   # {chat_id: bool} - Race condition rokne ke liye
 
 # ==================== DATA LISTS FOR RAIDS & SPAM ====================
 RAID = [
