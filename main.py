@@ -6,7 +6,7 @@ import shutil
 import random
 import asyncio
 from typing import Union, List
-from pyrogram import Client, filters
+from pyrogram import Client, filters, idle
 from pyrogram.types import (
     Message, 
     InlineKeyboardMarkup, 
@@ -724,14 +724,28 @@ async def stats_cmd(_, m: Message):
     )
 
 # ==================== RUNNER ====================
-async def main():
+async def start_bot():
     await bot.start()
     await userbot.start()
     await call_py.start()
-    print("------------------------------------------")
-    print(" Romeo Music Bot (Production Ready) Online")
-    print("------------------------------------------")
-    await asyncio.Event().wait()
+    me = await bot.get_me()
+    return me.username
+
+async def stop_bot():
+    await bot.stop()
+    await userbot.stop()
+    await call_py.stop()
+    me = await bot.get_me()
+    return me.username
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    async def run_standalone():
+        await start_bot()
+        print("------------------------------------------")
+        print(" Romeo Music Bot (Production Ready) Online")
+        print("------------------------------------------")
+        await idle()
+        await stop_bot()
+
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(run_standalone())
