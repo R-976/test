@@ -24,16 +24,16 @@ from spotipy.oauth2 import SpotifyClientCredentials
 from motor.motor_asyncio import AsyncIOMotorClient
 
 # ==================== CONFIGURATION ====================
-API_ID = int(os.environ.get("API_ID", "123456"))
-API_HASH = os.environ.get("API_HASH", "your_api_hash")
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "your_bot_token")
-SESSION_STRING = os.environ.get("SESSION_STRING", "your_session_string")
-MONGO_DB_URI = os.environ.get("MONGO_DB_URI", "mongodb+srv://...")
-OWNER_ID = int(os.environ.get("OWNER_ID", "123456789"))
-LOG_GROUP_ID = int(os.environ.get("LOG_GROUP_ID", "-100123456789"))
+API_ID = int(os.environ.get("API_ID", "19031598"))
+API_HASH = os.environ.get("API_HASH", "14e2d2af6e6dc769e60991cab81027d5")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "5523050102:AAFMpTYcxftUYAW-L-RSVVCns-uGjfGAF_E")
+SESSION_STRING = os.environ.get("SESSION_STRING", "BQCkvkoAU7nTFh4-Q1ZHq7qBh1MwF5RhkDYxSgsrDQYJoD0bvIQilfWDjp4cPnbzDgcd7-mEfy2xCzW26BRNTwnVEa-oz5HU6xD7Zm2_85SlNGzzyBdugP2fr4LS_6ft6HDWHEklqx93N4BN353Ak9Hn8bNN5oGgl72A-YB4Lz-JYw83QSrQphZOAMtDfZbJbgU0mygbgNzLiRj4eSlxJ9uPRp1gnfAUxwSnOaYWOo6DGnC4dsPDR-gVCXy1WX1UHleqlrABsDYLvMiRcJFHAB-emF0nCZisTrRx6Y4It9SaBazWpPWOpa4XWw_umnSYF6-krvqyYgnEnOZ8xQtZBu_LfjxkRQAAAAHwPlCqAA")
+MONGO_DB_URI = os.environ.get("MONGO_DB_URI", "mongodb+srv://chatfight:chatfight@chatfight.1va4gdm.mongodb.net/?appName=chatfight")
+OWNER_ID = int(os.environ.get("OWNER_ID", "5368154755"))
+LOG_GROUP_ID = int(os.environ.get("LOG_GROUP_ID", "-1002935351540"))
 
-SPOTIFY_CLIENT_ID = os.environ.get("SPOTIFY_CLIENT_ID", "")
-SPOTIFY_CLIENT_SECRET = os.environ.get("SPOTIFY_CLIENT_SECRET", "")
+SPOTIFY_CLIENT_ID = os.environ.get("SPOTIFY_CLIENT_ID", "c7ac5c70cda042dca0ae2ef11e0e22c3")
+SPOTIFY_CLIENT_SECRET = os.environ.get("SPOTIFY_CLIENT_SECRET", "608e63ab16ae486bb257602bd02cb7a1")
 COOKIE_PATH = os.environ.get("COOKIE_PATH", "cookies.txt")
 
 DOWNLOAD_DIR = "downloads"
