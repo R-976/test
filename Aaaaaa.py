@@ -5,9 +5,9 @@ from pyrogram import Client, filters
 from pyrogram.types import Message
 
 # --- Configs ---
-API_ID = 12345678                 # Apna API_ID daalein
-API_HASH = "your_api_hash_here"   # Apna API_HASH daalein
-BOT_TOKEN = "your_bot_token_here" # Apna BOT_TOKEN daalein
+API_ID = 10796618                 # Apna API_ID daalein
+API_HASH = "4e4b20b4e1e40c90fcb1a7658c800150"   # Apna API_HASH daalein
+BOT_TOKEN = "5431733777:AAEdXWoT08HlQWlDfbVu5JMAfRgHXonbDxM" # Apna BOT_TOKEN daalein
 
 app = Client("yt_command_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
